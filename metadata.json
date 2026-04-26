@@ -1,0 +1,13 @@
+{
+  "title": "Enterprise Sales-Tracker",
+  "description": "Premium Supervisor Dashboard for Daily Disbursement Tracking",
+  "version": "1.0.0",
+  "theme_color": "#0f1115",
+  "author": "Liyaqat Dev",
+  "features": [
+    "Live Calculation Engine",
+    "Glassmorphism UI",
+    "Supervisor-only Access"
+  ]
+}
+
