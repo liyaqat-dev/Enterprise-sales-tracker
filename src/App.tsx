@@ -1,7 +1,8 @@
+```react
 import React, { useState, useMemo, ChangeEvent, FormEvent } from 'react';
 import { LayoutGrid, TrendingUp } from 'lucide-react';
 
-// 1. Define the Shapes (Interfaces)
+// 1. Updated Product Logic with exact pricing
 interface ProductInfo {
   rate: number;
 }
@@ -19,35 +20,41 @@ interface SaleEntry {
 }
 
 const PRODUCTS: ProductMap = {
-  'Product 1': { rate: 500 },
-  'Product 2': { rate: 1200 },
-  'Product 3': { rate: 2500 },
+  'Product 1': { rate: 5 },
+  'Product 2': { rate: 10 },
+  'Product 3': { rate: 15 },
+  'Product 4': { rate: 30 },
 };
 
 export default function App() {
-  // 2. Add Types to State
   const [entries, setEntries] = useState<SaleEntry[]>([]);
-  const [form, setForm] = useState({ staff: '', product: '', qty: '' });
+  // Changed products to an array to support multi-selection
+  const [form, setForm] = useState({ staff: '', products: [] as string[], qty: '' });
 
+  // Modified calculation logic to sum multiple product rates
   const total = useMemo(() => {
-    const productData = PRODUCTS[form.product];
-    const rate = productData ? productData.rate : 0;
-    return rate * (parseInt(form.qty) || 0);
+    const combinedRate = form.products.reduce((acc, productName) => {
+      const productData = PRODUCTS[productName];
+      return acc + (productData ? productData.rate : 0);
+    }, 0);
+    return combinedRate * (parseInt(form.qty) || 0);
   }, [form]);
 
-  // 3. Add Types to Events
   const addEntry = (e: FormEvent) => {
     e.preventDefault();
-    if (!form.staff || !form.product || !form.qty) return;
+    if (!form.staff || form.products.length === 0 || !form.qty) return;
     
     const newEntry: SaleEntry = { 
-      ...form, 
-      total, 
-      id: Date.now() 
+      id: Date.now(),
+      staff: form.staff,
+      qty: form.qty,
+      // Joins selected products into a single string for the display table
+      product: form.products.join(', '), 
+      total: total
     };
     
     setEntries([newEntry, ...entries]);
-    setForm({ staff: '', product: '', qty: '' });
+    setForm({ staff: '', products: [], qty: '' });
   };
 
   return (
@@ -63,6 +70,7 @@ export default function App() {
             <LayoutGrid size={20} className="text-[#d4af37]" /> Quick Update
           </h2>
           <form onSubmit={addEntry} className="space-y-4">
+            <label className="block text-xs font-medium text-slate-500">Staff Member</label>
             <select 
               value={form.staff} 
               onChange={(e: ChangeEvent<HTMLSelectElement>) => setForm({...form, staff: e.target.value})}
@@ -73,26 +81,35 @@ export default function App() {
               <option value="Staff B">Staff B</option>
             </select>
 
+            <label className="block text-xs font-medium text-slate-500">Products (Multi-select)</label>
             <select 
-              value={form.product} 
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setForm({...form, product: e.target.value})}
-              className="w-full bg-[#1c212c] border border-white/10 rounded-lg p-3 text-white outline-none focus:border-[#d4af37]"
+              multiple
+              value={form.products} 
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                const values = Array.from(e.target.selectedOptions, option => option.value);
+                setForm({...form, products: values});
+              }}
+              className="w-full bg-[#1c212c] border border-white/10 rounded-lg p-3 text-white outline-none focus:border-[#d4af37] min-h-[120px]"
             >
-              <option value="">Select Product</option>
-              {Object.keys(PRODUCTS).map(p => <option key={p} value={p}>{p}</option>)}
+              {Object.keys(PRODUCTS).map(p => (
+                <option key={p} value={p}>{p} (₹{PRODUCTS[p].rate})</option>
+              ))}
             </select>
+            <p className="text-[10px] text-slate-500 italic">Hold Ctrl (PC) or Cmd (Mac) to select multiple</p>
 
+            <label className="block text-xs font-medium text-slate-500">Quantity (Nos)</label>
             <input 
               type="number" 
               value={form.qty}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({...form, qty: e.target.value})}
               className="w-full bg-[#1c212c] border border-white/10 rounded-lg p-3 text-white outline-none"
-              placeholder="Quantity"
+              placeholder="0"
             />
 
             <div className="pt-4 border-t border-white/5 text-center">
-              <p className="text-sm">Total: <span className="text-[#d4af37] font-bold text-xl">₹{total}</span></p>
-              <button type="submit" className="w-full mt-4 bg-[#d4af37] text-black font-bold py-3 rounded-lg">
+              <p className="text-sm text-slate-400">Estimated Total</p>
+              <p className="text-[#d4af37] font-bold text-3xl">₹{total}</p>
+              <button type="submit" className="w-full mt-4 bg-[#d4af37] hover:bg-[#b8962e] text-black font-bold py-3 rounded-lg transition-colors">
                 Log Disbursement
               </button>
             </div>
@@ -104,26 +121,35 @@ export default function App() {
             <h2 className="text-xl font-semibold text-white">Recent Activity</h2>
             <TrendingUp size={20} className="text-emerald-500" />
           </div>
-          <table className="w-full text-left">
-            <thead className="bg-white/5 text-slate-500 text-xs uppercase">
-              <tr>
-                <th className="p-4">Staff</th>
-                <th className="p-4">Product</th>
-                <th className="p-4 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((item) => (
-                <tr key={item.id} className="border-b border-white/5">
-                  <td className="p-4 text-white">{item.staff}</td>
-                  <td className="p-4 text-slate-400">{item.product} (x{item.qty})</td>
-                  <td className="p-4 text-right text-[#d4af37] font-bold">₹{item.total}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-white/5 text-slate-500 text-xs uppercase">
+                <tr>
+                  <th className="p-4">Staff</th>
+                  <th className="p-4">Products</th>
+                  <th className="p-4 text-right">Total (INR)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((item) => (
+                  <tr key={item.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="p-4 text-white font-medium">{item.staff}</td>
+                    <td className="p-4 text-slate-400 text-sm">{item.product} <span className="text-xs ml-1">(x{item.qty})</span></td>
+                    <td className="p-4 text-right text-[#d4af37] font-bold font-mono">₹{item.total}</td>
+                  </tr>
+                ))}
+                {entries.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="p-10 text-center text-slate-600 italic">No disbursements logged for this session.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </div>
   );
 }
+
+```
