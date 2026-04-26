@@ -1,42 +1,68 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, ChangeEvent, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Constant Data Schema
-const STAFF_MEMBERS = ['A', 'B', 'C', 'D'];
-const PRODUCTS = {
+// 1. Define Interfaces for Type Safety
+interface Product {
+  id: number;
+  rate: number;
+}
+
+interface SaleEntry {
+  id: number;
+  staffName: string;
+  productName: string;
+  quantity: string | number;
+  rate: number;
+  total: number;
+  timestamp: string;
+}
+
+// 2. Constant Data Schema with explicit Typing
+const STAFF_MEMBERS: string[] = ['A', 'B', 'C', 'D'];
+
+const PRODUCTS: Record<string, Product> = {
   'Product 1': { id: 1, rate: 5 },
   'Product 2': { id: 2, rate: 10 },
   'Product 3': { id: 3, rate: 15 },
   'Product 4': { id: 4, rate: 30 },
 };
 
-const EnterpriseSalesTracker = () => {
-  const [entries, setEntries] = useState([]);
+const EnterpriseSalesTracker: React.FC = () => {
+  // 3. Typed States
+  const [entries, setEntries] = useState<SaleEntry[]>([]);
   const [formData, setFormData] = useState({
     staffName: '',
     productName: '',
     quantity: ''
   });
 
-  // Calculation Engine: Rate × Quantity = Total
+  // 4. Calculation Engine: Rate × Quantity = Total
   const currentTotal = useMemo(() => {
-    const rate = PRODUCTS[formData.productName]?.rate || 0;
+    // Safely access the product rate using a check
+    const product = formData.productName ? PRODUCTS[formData.productName] : null;
+    const rate = product ? product.rate : 0;
     return rate * (parseInt(formData.quantity) || 0);
   }, [formData]);
 
-  const handleUpdate = (e) => {
+  // 5. Typed Event Handlers
+  const handleUpdate = (e: FormEvent) => {
     e.preventDefault();
     if (!formData.staffName || !formData.productName || !formData.quantity) return;
 
-    const newEntry = {
+    const selectedProduct = PRODUCTS[formData.productName];
+
+    const newEntry: SaleEntry = {
       id: Date.now(),
-      ...formData,
-      rate: PRODUCTS[formData.productName].rate,
+      staffName: formData.staffName,
+      productName: formData.productName,
+      quantity: formData.quantity,
+      rate: selectedProduct.rate,
       total: currentTotal,
       timestamp: new Date().toLocaleTimeString()
     };
 
     setEntries([newEntry, ...entries]);
+    // Reset form
     setFormData({ staffName: '', productName: '', quantity: '' });
   };
 
@@ -69,7 +95,7 @@ const EnterpriseSalesTracker = () => {
                 <label className="block text-xs uppercase text-slate-500 mb-2 tracking-wide">Staff Member</label>
                 <select 
                   value={formData.staffName}
-                  onChange={(e) => setFormData({...formData, staffName: e.target.value})}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setFormData({...formData, staffName: e.target.value})}
                   className="w-full bg-[#1a1d23] border border-slate-700 rounded-lg p-3 text-sm focus:border-[#d4af37] outline-none transition-all"
                 >
                   <option value="">Select Staff</option>
@@ -81,7 +107,7 @@ const EnterpriseSalesTracker = () => {
                 <label className="block text-xs uppercase text-slate-500 mb-2 tracking-wide">Product</label>
                 <select 
                   value={formData.productName}
-                  onChange={(e) => setFormData({...formData, productName: e.target.value})}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setFormData({...formData, productName: e.target.value})}
                   className="w-full bg-[#1a1d23] border border-slate-700 rounded-lg p-3 text-sm focus:border-[#d4af37] outline-none transition-all"
                 >
                   <option value="">Select Product</option>
@@ -95,7 +121,7 @@ const EnterpriseSalesTracker = () => {
                   type="number"
                   placeholder="0"
                   value={formData.quantity}
-                  onChange={(e) => setFormData({...formData, quantity: e.target.value})}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({...formData, quantity: e.target.value})}
                   className="w-full bg-[#1a1d23] border border-slate-700 rounded-lg p-3 text-sm focus:border-[#d4af37] outline-none transition-all"
                 />
               </div>
@@ -135,7 +161,7 @@ const EnterpriseSalesTracker = () => {
                 <AnimatePresence initial={false}>
                   {entries.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="p-12 text-center text-slate-600 italic">
+                      <td colSpan={5} className="p-12 text-center text-slate-600 italic">
                         No disbursements logged for this session.
                       </td>
                     </tr>
@@ -167,3 +193,4 @@ const EnterpriseSalesTracker = () => {
 };
 
 export default EnterpriseSalesTracker;
+
