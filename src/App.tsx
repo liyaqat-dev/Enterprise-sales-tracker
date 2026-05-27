@@ -193,6 +193,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Appending the flat object (data) instead of the whole array array "data" to prevent screen crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -410,6 +411,39 @@ export default function App() {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
 
+  // --- EXPORT TO EXCEL (CSV) ---
+  const handleExportToExcel = () => {
+    if (filteredTransactions.length === 0) return;
+
+    // Define CSV Headers
+    const headers = ['Timestamp / Date', 'Staff Member Name', 'Product Disbursed', 'Fixed Rate (Rs)', 'Quantity (Nos)', 'Total Price Formula', 'Total Amount (Rs)'];
+    
+    // Map filtered transactions into flat CSV rows
+    const rows = filteredTransactions.map(tx => {
+      const staffName = staffList.find(s => s.id === tx.staff_id)?.name || 'Deleted Staff';
+      const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
+      const formula = `${tx.rate} x ${tx.quantity}`;
+      
+      // Wrapping values in double quotes safely handles internal commas 
+      return `"${tx.timestamp}","${staffName}","${prodName}","${tx.rate}","${tx.quantity}","${formula}","${tx.total}"`;
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    
+    // Create filename based on current date
+    const dateStr = new Date().toISOString().split('T');
+    link.setAttribute('download', `Enterprise_Filtered_Ledger_Export_${dateStr}.csv`);
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Loading Screen
   if (!isLibLoaded || isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
@@ -579,24 +613,40 @@ export default function App() {
               </div>
             </div>
 
-            {/* Clear Filter Indicator */}
-            {(filterStaff !== 'All' || filterProduct !== 'All' || datePreset !== 'All' || startDate || endDate) && (
+            {/* Action Buttons: Clear Filters & Export */}
+            <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+              {/* Clear Filter Indicator */}
+              {(filterStaff !== 'All' || filterProduct !== 'All' || datePreset !== 'All' || startDate || endDate) && (
+                <button
+                  onClick={() => { 
+                    setFilterStaff('All'); 
+                    setFilterProduct('All'); 
+                    setDatePreset('All');
+                    setStartDate('');
+                    setEndDate('');
+                  }}
+                  className="px-3 py-1.5 bg-[#FAF5EE] text-xs text-[#5C4033] hover:bg-[#FAF0E6] rounded-xl border border-[#D5C9B7] font-medium flex items-center gap-1.5 transition-colors duration-150"
+                >
+                  Clear All Filters
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Export to Excel Button */}
               <button
-                onClick={() => { 
-                  setFilterStaff('All'); 
-                  setFilterProduct('All'); 
-                  setDatePreset('All');
-                  setStartDate('');
-                  setEndDate('');
-                }}
-                className="px-3 py-1.5 bg-[#FAF5EE] text-xs text-[#5C4033] hover:bg-[#FAF0E6] rounded-xl border border-[#D5C9B7] font-medium flex items-center gap-1.5 transition-colors duration-150 self-start md:self-auto"
+                onClick={handleExportToExcel}
+                disabled={filteredTransactions.length === 0}
+                className="px-3 py-1.5 bg-emerald-55 text-xs text-emerald-800 hover:bg-emerald-100 rounded-xl border border-emerald-200 font-bold flex items-center gap-1.5 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95"
+                title="Download Filtered Ledger as Excel (CSV)"
               >
-                Clear All Filters
+                Export Excel
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </button>
-            )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
