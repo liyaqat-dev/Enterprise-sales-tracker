@@ -1,18 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enterprise Sales-Tracker</title>
-    <!-- SF Pro / Inter Typography fallbacks -->
-    <link rel="preconnect" href="[https://fonts.googleapis.com](https://fonts.googleapis.com)">
-    <link rel="preconnect" href="[https://fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin>
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap)" rel="stylesheet">
-    <link rel="icon" type="image/png" href="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-  </head>
-  <body class="bg-[#FAF8F5]">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+  <!-- ── Primary Meta ─────────────────────────────────── -->
+  <title>Enterprise Sales-Tracker</title>
+  <meta name="description" content="Supervisor-grade product disbursement tracker with real-time sync." />
+  <meta name="theme-color" content="#5C4033" />
+  <meta name="color-scheme" content="light" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="SalesTracker" />
+
+  <!-- ── Apple PWA Meta ───────────────────────────────── -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="SalesTracker" />
+  <link rel="apple-touch-icon" href="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" />
+
+  <!-- ── Microsoft Tiles ──────────────────────────────── -->
+  <meta name="msapplication-TileColor" content="#5C4033" />
+  <meta name="msapplication-TileImage" content="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" />
+  <meta name="msapplication-tap-highlight" content="no" />
+
+  <!-- ── Open Graph ───────────────────────────────────── -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Enterprise Sales-Tracker" />
+  <meta property="og:description" content="Supervisor-grade product disbursement tracker." />
+  <meta property="og:image" content="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" />
+
+  <!-- ── PWA Manifest ─────────────────────────────────── -->
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- ── Favicon ──────────────────────────────────────── -->
+  <link rel="icon" type="image/png" href="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" />
+
+  <!-- ── Safe-area insets for notched devices ─────────── -->
+  <style>
+    :root {
+      --sat: env(safe-area-inset-top);
+      --sar: env(safe-area-inset-right);
+      --sab: env(safe-area-inset-bottom);
+      --sal: env(safe-area-inset-left);
+    }
+    html, body, #root {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #FAF8F5;
+    }
+    /* Prevent flash of unstyled content */
+    #root:empty::before {
+      content: '';
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- React app mounts here -->
+  <div id="root"></div>
+
+  <!--
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║  SERVICE WORKER REGISTRATION                                     ║
+    ║  Place this script at the end of <body>.                         ║
+    ║  The SW must be served from the same origin as your app.         ║
+    ║  File: /sw.js  (in public/ root for CRA / Vite)                  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+  -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sw.js', { scope: '/' })
+          .then(registration => {
+            console.log('[PWA] Service Worker registered. Scope:', registration.scope);
+
+            // Listen for SW updates and prompt user to refresh
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              if (!newWorker) return;
+
+              newWorker.addEventListener('statechange', () => {
+                if (
+                  newWorker.state === 'installed' &&
+                  navigator.serviceWorker.controller
+                ) {
+                  // New content available — you can surface a toast here
+                  console.log('[PWA] New version available. Refresh to update.');
+                }
+              });
+            });
+          })
+          .catch(err => {
+            console.warn('[PWA] Service Worker registration failed:', err);
+          });
+      });
+
+      // Reload page when a new SW takes control (after the user refreshes)
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+    }
+  </script>
+
+</body>
 </html>
