@@ -1,4 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
+
+// --- FIREBASE SETUP ---
+// @ts-ignore
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Sanitizing appId to replace any slashes with underscores so Firestore doesn't miscount path segments
+// @ts-ignore
+const appIdRaw = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = appIdRaw.replace(/\//g, '_');
 
 // --- TYPE DEFINITIONS ---
 interface Staff {
@@ -14,39 +29,26 @@ interface Product {
 
 interface Transaction {
   id: string;
-  staffId: string;
-  productId: string;
+  staff_id: string;
+  product_id: string;
   quantity: number;
   rate: number;
   total: number;
   timestamp: string;
+  created_at?: number;
 }
 
 export default function App() {
   // --- STATE MANAGEMENT WITH TYPES ---
+  const [user, setUser] = useState<User | null>(null);
   
-  // Staff list (Initial: A, B, C, D)
-  const [staffList, setStaffList] = useState<Staff[]>([
-    { id: 'st-1', name: 'Staff A' },
-    { id: 'st-2', name: 'Staff B' },
-    { id: 'st-3', name: 'Staff C' },
-    { id: 'st-4', name: 'Staff D' }
-  ]);
-
-  // Products & Configuration (Initial: 1, 2, 3, 4 with custom rates)
-  const [productList, setProductList] = useState<Product[]>([
-    { id: 'p-1', name: 'Product 1', rate: 5 },
-    { id: 'p-2', name: 'Product 2', rate: 10 },
-    { id: 'p-3', name: 'Product 3', rate: 15 },
-    { id: 'p-4', name: 'Product 4', rate: 30 }
-  ]);
-
-  // Transactions / Disbursements Log
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { id: 'tx-1', staffId: 'st-1', productId: 'p-1', quantity: 10, rate: 5, total: 50, timestamp: '2026-05-26 10:30 AM' },
-    { id: 'tx-2', staffId: 'st-2', productId: 'p-2', quantity: 5, rate: 10, total: 50, timestamp: '2026-05-26 11:15 AM' },
-    { id: 'tx-3', staffId: 'st-3', productId: 'p-4', quantity: 3, rate: 30, total: 90, timestamp: '2026-05-26 02:45 PM' }
-  ]);
+  // States initialized as empty. Data will come from Database.
+  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [productList, setProductList] = useState<Product[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // Loading state for initial fetch
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Modal Control
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -72,48 +74,122 @@ export default function App() {
   const [filterStaff, setFilterStaff] = useState<string>('All');
   const [filterProduct, setFilterProduct] = useState<string>('All');
 
+  // --- AUTH & DATA FETCHING ---
+  useEffect(() => {
+    const initAuth = async () => {
+      // @ts-ignore
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        // @ts-ignore
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    setIsLoading(true);
+
+    const staffRef = collection(db, 'artifacts', appId, 'users', user.uid, 'staff');
+    const productsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
+    const txRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
+
+    const unsubStaff = onSnapshot(staffRef, (snapshot) => {
+      setStaffList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Staff)));
+    }, (error) => console.error(error));
+
+    const unsubProducts = onSnapshot(productsRef, (snapshot) => {
+      setProductList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    }, (error) => console.error(error));
+
+    const unsubTx = onSnapshot(txRef, (snapshot) => {
+      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+      txs.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+      setTransactions(txs);
+      setIsLoading(false);
+    }, (error) => {
+      console.error(error);
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubStaff();
+      unsubProducts();
+      unsubTx();
+    };
+  }, [user]);
+
   // --- HANDLERS & LOGIC ---
 
-  const handleAddStaff = (e: React.FormEvent) => {
+  const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffName.trim()) return;
-    const newStaff: Staff = {
-      id: `st-${Date.now()}`,
-      name: newStaffName.trim()
-    };
-    setStaffList([...staffList, newStaff]);
-    setNewStaffName('');
+    if (!newStaffName.trim() || !user) return;
+    
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'staff'), {
+        name: newStaffName.trim(),
+        created_at: Date.now()
+      });
+      setNewStaffName('');
+    } catch (error: any) {
+      console.error("Error adding staff:", error.message);
+    }
   };
 
-  const handleRemoveStaff = (id: string) => {
-    setStaffList(staffList.filter(s => s.id !== id));
+  const handleRemoveStaff = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'staff', id));
+    } catch (error: any) {
+      console.error("Error removing staff:", error.message);
+    }
   };
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProductName.trim() || !newProductRate) return;
+    if (!newProductName.trim() || !newProductRate || !user) return;
     const rateVal = parseFloat(newProductRate);
     if (isNaN(rateVal) || rateVal < 0) return;
 
-    const newProduct: Product = {
-      id: `p-${Date.now()}`,
-      name: newProductName.trim(),
-      rate: rateVal
-    };
-    setProductList([...productList, newProduct]);
-    setNewProductName('');
-    setNewProductRate('');
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'products'), {
+        name: newProductName.trim(),
+        rate: rateVal,
+        created_at: Date.now()
+      });
+      setNewProductName('');
+      setNewProductRate('');
+    } catch (error: any) {
+      console.error("Error adding product:", error.message);
+    }
   };
 
-  const handleUpdateProductRate = (id: string, newRate: string) => {
+  const handleUpdateProductRate = async (id: string, newRate: string) => {
+    if (!user) return;
     const parsed = parseFloat(newRate);
     if (isNaN(parsed) || parsed < 0) return;
-    setProductList(productList.map(p => p.id === id ? { ...p, rate: parsed } : p));
-    setEditingProductId(null);
+    
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', id), {
+        rate: parsed
+      });
+      setEditingProductId(null);
+    } catch (error: any) {
+      console.error("Error updating rate:", error.message);
+    }
   };
 
-  const handleRemoveProduct = (id: string) => {
-    setProductList(productList.filter(p => p.id !== id));
+  const handleRemoveProduct = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', id));
+    } catch (error: any) {
+      console.error("Error removing product:", error.message);
+    }
   };
 
   // Live calculation helper for current modal entry
@@ -128,10 +204,10 @@ export default function App() {
     return qty * currentLiveRate;
   }, [newTxQuantity, currentLiveRate]);
 
-  // Submit dynamic disbursement log
-  const handleLogDisbursement = (e: React.FormEvent) => {
+  // Submit dynamic disbursement log to Database
+  const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTxStaff || !newTxProduct || !newTxQuantity) return;
+    if (!newTxStaff || !newTxProduct || !newTxQuantity || !user) return;
     const qty = parseInt(newTxQuantity);
     if (isNaN(qty) || qty <= 0) return;
 
@@ -139,45 +215,64 @@ export default function App() {
     if (!prod) return;
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString();
+    const total = qty * prod.rate;
 
-    const newTransaction: Transaction = {
-      id: `tx-${Date.now()}`,
-      staffId: newTxStaff,
-      productId: newTxProduct,
-      quantity: qty,
-      rate: prod.rate,
-      total: qty * prod.rate,
-      timestamp
-    };
-
-    setTransactions([newTransaction, ...transactions]);
-    // Reset fields & close modal
-    setNewTxStaff('');
-    setNewTxProduct('');
-    setNewTxQuantity('');
-    setIsLogModalOpen(false);
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
+        staff_id: newTxStaff,
+        product_id: newTxProduct,
+        quantity: qty,
+        rate: prod.rate,
+        total: total,
+        timestamp: timestamp,
+        created_at: Date.now()
+      });
+      // Reset fields & close modal
+      setNewTxStaff('');
+      setNewTxProduct('');
+      setNewTxQuantity('');
+      setIsLogModalOpen(false);
+    } catch (error: any) {
+      console.error("Error logging disbursement:", error.message);
+    }
   };
 
-  const handleDeleteTransaction = (txId: string) => {
-    setTransactions(transactions.filter(t => t.id !== txId));
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', txId));
+    } catch (error: any) {
+      console.error("Error deleting transaction:", error.message);
+    }
   };
 
   // --- DERIVED METRICS ---
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const matchStaff = filterStaff === 'All' || t.staffId === filterStaff;
-      const matchProduct = filterProduct === 'All' || t.productId === filterProduct;
+      const matchStaff = filterStaff === 'All' || t.staff_id === filterStaff;
+      const matchProduct = filterProduct === 'All' || t.product_id === filterProduct;
       return matchStaff && matchProduct;
     });
   }, [transactions, filterStaff, filterProduct]);
 
   const totalDisbursedAmount = useMemo(() => {
-    return filteredTransactions.reduce((acc, t) => acc + t.total, 0);
+    return filteredTransactions.reduce((acc, t) => acc + Number(t.total), 0);
   }, [filteredTransactions]);
 
   const totalDisbursedQuantity = useMemo(() => {
-    return filteredTransactions.reduce((acc, t) => acc + t.quantity, 0);
+    return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#D5C9B7] border-t-[#5C4033] rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[#5C4033] font-semibold text-sm">Syncing Enterprise Vault...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#2C211A] font-sans antialiased selection:bg-[#EEDFCC] selection:text-[#5C4033]">
@@ -191,18 +286,18 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           
           {/* Logo & Brand Info */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center space-x-1">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center space-x-2">
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" 
                 alt="Brand Logo Left" 
-                className="w-7 h-7 object-contain"
+                className="w-16 h-16 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182503.png?raw=true" 
                 alt="Brand Logo Right" 
-                className="w-7 h-7 object-contain"
+                className="w-16 h-16 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             </div>
@@ -212,7 +307,7 @@ export default function App() {
                   HQ Admin
                 </span>
               </div>
-              <h1 className="text-lg font-bold tracking-tight text-[#2C211A]">Enterprise Sales-Tracker</h1>
+              <h1 className="text-xl font-bold tracking-tight text-[#2C211A]">Enterprise Sales-Tracker</h1>
             </div>
           </div>
 
@@ -432,8 +527,8 @@ export default function App() {
                   </tr>
                 ) : (
                   filteredTransactions.map((tx) => {
-                    const staff = staffList.find(s => s.id === tx.staffId);
-                    const prod = productList.find(p => p.id === tx.productId);
+                    const staff = staffList.find(s => s.id === tx.staff_id);
+                    const prod = productList.find(p => p.id === tx.product_id);
                     return (
                       <tr 
                         key={tx.id} 
@@ -451,7 +546,7 @@ export default function App() {
                           </span>
                         </td>
                         <td className="py-4 px-6 text-right font-medium text-amber-900/70">
-                          ₹{tx.rate.toFixed(2)}
+                          ₹{Number(tx.rate).toFixed(2)}
                         </td>
                         <td className="py-4 px-6 text-right font-bold text-[#2C211A]">
                           {tx.quantity} <span className="text-[10px] font-normal text-amber-900/50">nos</span>
@@ -459,10 +554,10 @@ export default function App() {
                         <td className="py-4 px-6 text-right">
                           <div className="flex flex-col items-end">
                             <span className="text-xs text-amber-900/50 font-mono font-light">
-                              {tx.rate} × {tx.quantity}
+                              {Number(tx.rate)} × {Number(tx.quantity)}
                             </span>
                             <span className="font-bold text-[#5C4033] text-sm">
-                              ₹{tx.total.toLocaleString('en-IN')}
+                              ₹{Number(tx.total).toLocaleString('en-IN')}
                             </span>
                           </div>
                         </td>
@@ -511,18 +606,18 @@ export default function App() {
       {/* FOOTER */}
       <footer className="max-w-7xl mx-auto px-6 py-12 mt-12 border-t border-[#EBE3D5]">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-amber-900/50">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center space-x-1">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center space-x-2">
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" 
                 alt="Logo Small Left" 
-                className="w-5 h-5 object-contain"
+                className="w-10 h-10 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182503.png?raw=true" 
                 alt="Logo Small Right" 
-                className="w-5 h-5 object-contain"
+                className="w-10 h-10 object-contain"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             </div>
@@ -850,7 +945,7 @@ export default function App() {
                           ) : (
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-[#5C4033] bg-[#EEDFCC]/45 px-2.5 py-0.5 rounded-lg">
-                                ₹ {product.rate.toFixed(2)}
+                                ₹ {Number(product.rate).toFixed(2)}
                               </span>
                               <button
                                 onClick={() => {
