@@ -227,7 +227,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Flat state update prevents React objects-as-child crash
+        // Flat state update with data prevents React objects-as-child crash
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
         // Trigger safe auto-refresh immediately
@@ -269,6 +269,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Flat state update with data prevents React objects-as-child crash
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -295,6 +296,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Flat state update with data prevents React objects-as-child crash
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
         fetchEnterpriseData(false);
@@ -361,6 +363,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Flat state update with data prevents React objects-as-child crash
         setTransactions(prev => [data, ...prev]);
         setNewTxStaff('');
         setNewTxProduct('');
