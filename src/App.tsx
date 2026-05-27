@@ -23,6 +23,11 @@ interface Transaction {
   created_at?: string;
 }
 
+interface DisbursementItem {
+  product_id: string;
+  quantity: number;
+}
+
 // --- CLIENT LAZY LOADER FOR LIVE PREVIEW SUPPORT ---
 const supabaseUrl = 'https://aormlfkegnheawtqrtvx.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvcm1sZmtlZ25oZWF3dHFydHZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEwMDYsImV4cCI6MjA5NTM3NzAwNn0.pf4YCh2E4g5L_K6bM1WZZ5byiAWEp_2LzUbMke9OqNM';
@@ -54,9 +59,11 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
+  // New Transaction Form State
   const [newTxStaff, setNewTxStaff] = useState<string>('');
-  const [newTxProduct, setNewTxProduct] = useState<string>('');
-  const [newTxQuantity, setNewTxQuantity] = useState<string>('');
+  const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
+  const [currentSelectedProduct, setCurrentSelectedProduct] = useState<string>('');
+  const [currentSelectedQuantity, setCurrentSelectedQuantity] = useState<string>('');
 
   const [newStaffName, setNewStaffName] = useState<string>('');
 
@@ -204,6 +211,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Safe flat state update using data to prevent rendering crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -242,6 +250,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Safe flat state update using data to prevent rendering crashes
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -267,6 +276,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Safe flat state update using data to prevent rendering crashes
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -288,55 +298,75 @@ export default function App() {
     }
   };
 
-  const selectedProductObj = useMemo(() => {
-    return productList.find(p => p.id === newTxProduct);
-  }, [newTxProduct, productList]);
+  // --- MULTI PRODUCT LOGGING LOGIC ---
+  const handleAddItemToTxList = () => {
+    if (!currentSelectedProduct || !currentSelectedQuantity) return;
+    const qty = parseInt(currentSelectedQuantity);
+    if (isNaN(qty) || qty <= 0) return;
 
-  const currentLiveRate = selectedProductObj ? selectedProductObj.rate : 0;
-  
-  const currentLiveTotal = useMemo(() => {
-    const qty = parseInt(newTxQuantity) || 0;
-    return qty * currentLiveRate;
-  }, [newTxQuantity, currentLiveRate]);
+    const existingIndex = newTxItems.findIndex(item => item.product_id === currentSelectedProduct);
+    if (existingIndex > -1) {
+      const updated = [...newTxItems];
+      updated[existingIndex].quantity += qty;
+      setNewTxItems(updated);
+    } else {
+      setNewTxItems([...newTxItems, { product_id: currentSelectedProduct, quantity: qty }]);
+    }
+    
+    setCurrentSelectedProduct('');
+    setCurrentSelectedQuantity('');
+  };
+
+  const handleRemoveItemFromTxList = (productId: string) => {
+    setNewTxItems(newTxItems.filter(item => item.product_id !== productId));
+  };
+
+  const modalGrandTotal = useMemo(() => {
+    return newTxItems.reduce((sum, item) => {
+      const prod = productList.find(p => p.id === item.product_id);
+      return sum + (prod ? prod.rate * item.quantity : 0);
+    }, 0);
+  }, [newTxItems, productList]);
 
   const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTxStaff || !newTxProduct || !newTxQuantity) return;
-    const qty = parseInt(newTxQuantity);
-    if (isNaN(qty) || qty <= 0) return;
-
-    const prod = productList.find(p => p.id === newTxProduct);
-    if (!prod) return;
+    if (!newTxStaff || newTxItems.length === 0) return;
 
     const client = getSupabaseClient();
     if (!client) return;
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString();
-    const total = qty * prod.rate;
+
+    const inserts = newTxItems.map(item => {
+      const prod = productList.find(p => p.id === item.product_id)!;
+      return {
+        staff_id: newTxStaff,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        rate: prod.rate,
+        total: item.quantity * prod.rate,
+        timestamp: timestamp
+      };
+    });
 
     try {
       const { data, error } = await client
         .from('transactions')
-        .insert([{
-          staff_id: newTxStaff,
-          product_id: newTxProduct,
-          quantity: qty,
-          rate: prod.rate,
-          total: total,
-          timestamp: timestamp
-        }])
+        .insert(inserts)
         .select();
 
       if (error) throw error;
       if (data && data.length > 0) {
-        setTransactions(prev => [data, ...prev]);
+        // Dynamic real-time prepend flat response items to list
+        setTransactions(prev => [...data, ...prev]);
         setNewTxStaff('');
-        setNewTxProduct('');
-        setNewTxQuantity('');
+        setNewTxItems([]);
+        setCurrentSelectedProduct('');
+        setCurrentSelectedQuantity('');
         setIsLogModalOpen(false);
       }
     } catch (error: any) {
-      console.error("Error logging disbursement to Supabase:", error.message);
+      console.error("Error logging disbursements to Supabase:", error.message);
     }
   };
 
@@ -515,7 +545,10 @@ export default function App() {
             </button>
             
             <button
-              onClick={() => setIsLogModalOpen(true)}
+              onClick={() => {
+                setNewTxItems([]);
+                setIsLogModalOpen(true);
+              }}
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm transition-all active:scale-95 shadow-md shadow-amber-900/10 hover:shadow-lg"
             >
               <svg className="w-4 h-4 text-[#F3ECE0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -871,7 +904,7 @@ export default function App() {
       </footer>
 
 
-      {/* MODAL: LOG DISBURSEMENT */}
+      {/* MODAL: LOG DISBURSEMENT (MULTI-PRODUCT SUPPORTED) */}
       {isLogModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           
@@ -891,7 +924,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="font-bold text-[#2C211A] text-base">New Disbursement Form</h3>
-                  <p className="text-xs text-amber-900/50">Admin Quick-Action Supervisor Log</p>
+                  <p className="text-xs text-amber-900/50">Admin Quick-Action Multi-Product Log</p>
                 </div>
               </div>
               <button 
@@ -906,6 +939,7 @@ export default function App() {
 
             <div className="p-6 space-y-5">
               
+              {/* Staff Select */}
               <div>
                 <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
                   1. Select Staff Member
@@ -923,53 +957,98 @@ export default function App() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
-                  2. Select Product SKU
-                </label>
-                <select
-                  required
-                  value={newTxProduct}
-                  onChange={(e) => setNewTxProduct(e.target.value)}
-                  className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
+              {/* Add Product Line Section */}
+              <div className="border border-[#EBE3D5] rounded-2xl p-4 bg-[#FDFBF7] space-y-3">
+                <h4 className="text-xs font-bold text-[#5C4033] uppercase tracking-wide">
+                  2. Add Disbursement Items
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-amber-900/60 uppercase mb-1">Select Product</label>
+                    <select
+                      value={currentSelectedProduct}
+                      onChange={(e) => setCurrentSelectedProduct(e.target.value)}
+                      className="w-full bg-white border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none cursor-pointer"
+                    >
+                      <option value="" disabled>-- Choose Item --</option>
+                      {productList.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} (₹{p.rate})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-amber-900/60 uppercase mb-1">Quantity</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      value={currentSelectedQuantity}
+                      onChange={(e) => setCurrentSelectedQuantity(e.target.value)}
+                      className="w-full bg-white border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddItemToTxList}
+                  disabled={!currentSelectedProduct || !currentSelectedQuantity}
+                  className="w-full py-2 bg-[#FAF5EE] text-xs font-semibold text-[#5C4033] rounded-xl border border-[#D5C9B7] hover:bg-[#F3EFE7] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="" disabled>-- Select Catalog Item --</option>
-                  {productList.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} (₹{p.rate}/nos)</option>
-                  ))}
-                </select>
+                  Add Item to Disbursement List
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
-                  3. Quantity (Nos)
-                </label>
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 10"
-                  value={newTxQuantity}
-                  onChange={(e) => setNewTxQuantity(e.target.value)}
-                  className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all"
-                />
-              </div>
+              {/* Disbursement Cart Items */}
+              {newTxItems.length > 0 && (
+                <div className="space-y-2">
+                  <span className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide">
+                    Disbursement Summary List
+                  </span>
+                  <div className="max-h-40 overflow-y-auto border border-[#EBE3D5] rounded-2xl divide-y divide-[#F3ECE0] bg-white">
+                    {newTxItems.map((item) => {
+                      const prod = productList.find(p => p.id === item.product_id);
+                      if (!prod) return null;
+                      return (
+                        <div key={item.product_id} className="flex items-center justify-between p-3 text-xs">
+                          <div>
+                            <span className="font-bold text-[#2C211A]">{prod.name}</span>
+                            <span className="text-amber-900/60 ml-2">({item.quantity} nos × ₹{prod.rate})</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold text-[#5C4033]">₹{item.quantity * prod.rate}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemFromTxList(item.product_id)}
+                              className="text-rose-500 hover:text-rose-700 p-0.5"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
+              {/* CALCULATED PREVIEW CARD */}
               <div className="bg-[#FAF5EE] rounded-2xl p-4 border border-[#EBE3D5] flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-amber-900/50 uppercase tracking-wide">
                   Live Engine Calculation
                 </span>
                 <div className="flex justify-between items-end mt-2">
                   <div>
-                    <span className="text-xs text-amber-900/60 font-mono block">Formula Rate × Qty:</span>
-                    <span className="text-sm font-semibold text-[#5C4033] font-mono">
-                      ₹{currentLiveRate} × {newTxQuantity || '0'}
+                    <span className="text-xs text-amber-900/60 block">Logged Items:</span>
+                    <span className="text-sm font-semibold text-[#5C4033]">
+                      {newTxItems.length} Products configured
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] uppercase text-amber-900/50 block">Expected Total Price</span>
+                    <span className="text-[10px] uppercase text-amber-900/50 block">Disbursement Grand Total</span>
                     <span className="text-2xl font-extrabold text-[#2C211A] tracking-tight">
-                      ₹ {currentLiveTotal.toLocaleString('en-IN')}
+                      ₹ {modalGrandTotal.toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
@@ -986,7 +1065,8 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleLogDisbursement}
-                  className="w-1/2 py-3 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm shadow-md transition-all active:scale-95"
+                  disabled={!newTxStaff || newTxItems.length === 0}
+                  className="w-1/2 py-3 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Confirm Log
                 </button>
