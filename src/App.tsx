@@ -45,6 +45,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
   const [isLibLoaded, setIsLibLoaded] = useState<boolean>(false);
+  const [isXlsxLoaded, setIsXlsxLoaded] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -73,21 +74,31 @@ export default function App() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // --- SCRIPT INJECTOR ---
+  // --- SCRIPT INJECTOR FOR SUPABASE & SHEETJS ---
   useEffect(() => {
+    // 1. Load Supabase
     // @ts-ignore
     if (typeof window !== 'undefined' && window.supabase) {
       setIsLibLoaded(true);
-      return;
+    } else {
+      const supabaseScript = document.createElement('script');
+      supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js';
+      supabaseScript.async = true;
+      supabaseScript.onload = () => { setIsLibLoaded(true); };
+      document.head.appendChild(supabaseScript);
     }
 
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js';
-    script.async = true;
-    script.onload = () => { setIsLibLoaded(true); };
-    document.head.appendChild(script);
-
-    return () => { document.head.removeChild(script); };
+    // 2. Load SheetJS (XLSX)
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.XLSX) {
+      setIsXlsxLoaded(true);
+    } else {
+      const xlsxScript = document.createElement('script');
+      xlsxScript.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      xlsxScript.async = true;
+      xlsxScript.onload = () => { setIsXlsxLoaded(true); };
+      document.head.appendChild(xlsxScript);
+    }
   }, []);
 
   // --- PWA ---
@@ -193,7 +204,6 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Appending the flat object (data) instead of the whole array array "data" to prevent screen crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -411,47 +421,34 @@ export default function App() {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
 
-  // --- EXPORT TO EXCEL (CSV) ---
+  // --- EXPORT TO EXCEL (XLSX using DOM table element) ---
   const handleExportToExcel = () => {
-    if (filteredTransactions.length === 0) return;
+    // @ts-ignore
+    if (!window.XLSX) {
+      alert("SheetJS utility is still loading. Please try again in a second.");
+      return;
+    }
+    const tableElement = document.getElementById('disbursement-ledger-table');
+    if (!tableElement) return;
 
-    // Define CSV Headers
-    const headers = ['Timestamp / Date', 'Staff Member Name', 'Product Disbursed', 'Fixed Rate (Rs)', 'Quantity (Nos)', 'Total Price Formula', 'Total Amount (Rs)'];
+    // Use SheetJS to convert DOM table element directly into an Excel workbook
+    // @ts-ignore
+    const workbook = window.XLSX.utils.table_to_book(tableElement, { raw: true });
     
-    // Map filtered transactions into flat CSV rows
-    const rows = filteredTransactions.map(tx => {
-      const staffName = staffList.find(s => s.id === tx.staff_id)?.name || 'Deleted Staff';
-      const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
-      const formula = `${tx.rate} x ${tx.quantity}`;
-      
-      // Wrapping values in double quotes safely handles internal commas 
-      return `"${tx.timestamp}","${staffName}","${prodName}","${tx.rate}","${tx.quantity}","${formula}","${tx.total}"`;
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    
-    // Create filename based on current date
     const dateStr = new Date().toISOString().split('T');
-    link.setAttribute('download', `Enterprise_Filtered_Ledger_Export_${dateStr}.csv`);
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // @ts-ignore
+    window.XLSX.writeFile(workbook, `Enterprise_Filtered_Ledger_Export_${dateStr}.xlsx`);
   };
 
   // Loading Screen
-  if (!isLibLoaded || isLoading) {
+  if (!isLibLoaded || !isXlsxLoaded || isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-[#D5C9B7] border-t-[#5C4033] rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-[#5C4033] font-semibold text-sm">Syncing Enterprise Vault...</p>
-          {!isLibLoaded && (
-            <p className="text-xs text-amber-900/40 mt-1">Bootstrapping Database Services...</p>
+          {(!isLibLoaded || !isXlsxLoaded) && (
+            <p className="text-xs text-amber-900/40 mt-1">Bootstrapping Database & Export Services...</p>
           )}
         </div>
       </div>
@@ -634,17 +631,17 @@ export default function App() {
                 </button>
               )}
 
-              {/* Export to Excel Button */}
+              {/* Export to Excel Button (SheetJS Integrated - Premium Green) */}
               <button
                 onClick={handleExportToExcel}
                 disabled={filteredTransactions.length === 0}
-                className="px-3 py-1.5 bg-emerald-55 text-xs text-emerald-800 hover:bg-emerald-100 rounded-xl border border-emerald-200 font-bold flex items-center gap-1.5 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95"
-                title="Download Filtered Ledger as Excel (CSV)"
+                className="px-4 py-2 bg-[#107C41] text-xs text-white hover:bg-[#0E6C38] rounded-full font-bold flex items-center gap-2 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95"
+                title="Download Filtered Ledger as Excel Workbook (.xlsx)"
               >
-                Export Excel
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
+                Export Excel
               </button>
             </div>
           </div>
@@ -744,7 +741,7 @@ export default function App() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table id="disbursement-ledger-table" className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#FAF5EE]/60 border-b border-[#EBE3D5] text-[11px] font-bold uppercase tracking-wider text-[#5C4033]">
                   <th className="py-4 px-6">Timestamp / Date</th>
@@ -753,7 +750,7 @@ export default function App() {
                   <th className="py-4 px-6 text-right">Fixed Rate</th>
                   <th className="py-4 px-6 text-right">Quantity (Nos)</th>
                   <th className="py-4 px-6 text-right">Total Price Formula</th>
-                  <th className="py-4 px-6 text-right">Action</th>
+                  <th className="py-4 px-6 text-right" data-exclude="true">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F3ECE0]/80">
@@ -805,7 +802,7 @@ export default function App() {
                             </span>
                           </div>
                         </td>
-                        <td className="py-4 px-6 text-right">
+                        <td className="py-4 px-6 text-right" data-exclude="true">
                           <button
                             onClick={() => handleDeleteTransaction(tx.id)}
                             className="p-1.5 text-amber-900/40 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
