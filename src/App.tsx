@@ -24,16 +24,13 @@ interface Transaction {
 }
 
 // --- CLIENT LAZY LOADER FOR LIVE PREVIEW SUPPORT ---
-// Secure dynamic configuration values
 const supabaseUrl = 'https://aormlfkegnheawtqrtvx.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvcm1sZmtlZ25oZWF3dHFydHZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEwMDYsImV4cCI6MjA5NTM3NzAwNn0.pf4YCh2E4g5L_K6bM1WZZ5byiAWEp_2LzUbMke9OqNM';
 
-// We dynamically construct the client using a fallback window-bound library pattern to avoid compilation failures in isolated runtimes
 let supabaseClientInstance: any = null;
 
 function getSupabaseClient() {
   if (supabaseClientInstance) return supabaseClientInstance;
-  
   // @ts-ignore
   if (typeof window !== 'undefined' && window.supabase) {
     // @ts-ignore
@@ -43,44 +40,35 @@ function getSupabaseClient() {
 }
 
 export default function App() {
-  // --- STATE MANAGEMENT WITH TYPES ---
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [productList, setProductList] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
-  // Loading states
   const [isLibLoaded, setIsLibLoaded] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Modal Control
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
 
-  // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
-  // New Transaction Form State
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxProduct, setNewTxProduct] = useState<string>('');
   const [newTxQuantity, setNewTxQuantity] = useState<string>('');
 
-  // New Staff Form State
   const [newStaffName, setNewStaffName] = useState<string>('');
 
-  // New Product Form State
   const [newProductName, setNewProductName] = useState<string>('');
   const [newProductRate, setNewProductRate] = useState<string>('');
 
-  // Editing state for Product Rates
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editingRateValue, setEditingRateValue] = useState<string>('');
 
-  // Filtering logs
   const [filterStaff, setFilterStaff] = useState<string>('All');
   const [filterProduct, setFilterProduct] = useState<string>('All');
 
-  // --- COMPILER INTEGRATION: SCRIPT INJECTOR ---
+  // --- SCRIPT INJECTOR ---
   useEffect(() => {
     // @ts-ignore
     if (typeof window !== 'undefined' && window.supabase) {
@@ -91,48 +79,35 @@ export default function App() {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js';
     script.async = true;
-    script.onload = () => {
-      setIsLibLoaded(true);
-    };
+    script.onload = () => { setIsLibLoaded(true); };
     document.head.appendChild(script);
 
-    return () => {
-      document.head.removeChild(script);
-    };
+    return () => { document.head.removeChild(script); };
   }, []);
 
-  // --- PWA INSTALLATION EVENT LISTENERS ---
+  // --- PWA ---
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent automatic installation prompt banner from showing automatically
       e.preventDefault();
-      // Stash the event so it can be triggered with our premium button
       setDeferredPrompt(e);
       setIsInstallable(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
     window.addEventListener('appinstalled', () => {
-      // Clear install stashes
       setDeferredPrompt(null);
       setIsInstallable(false);
-      console.log('Enterprise Sales-Tracker was successfully installed.');
     });
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
+    return () => { window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt); };
   }, []);
 
-  // --- SUPABASE DATA FETCHING ---
+  // --- DATA FETCHING ---
   const fetchEnterpriseData = async (showLoader = false) => {
     const client = getSupabaseClient();
     if (!client) return;
 
-    if (showLoader) {
-      setIsLoading(true);
-    }
+    if (showLoader) setIsLoading(true);
     try {
       const [staffRes, productsRes, txRes] = await Promise.all([
         client.from('staff').select('*'),
@@ -146,25 +121,17 @@ export default function App() {
     } catch (err) {
       console.error("Error fetching data from Supabase:", err);
     } finally {
-      if (showLoader) {
-        setIsLoading(false);
-      }
+      if (showLoader) setIsLoading(false);
     }
   };
 
-  // Setup initial fetch & polling
   useEffect(() => {
     if (!isLibLoaded) return;
 
-    // Initial load with full screen loader
     fetchEnterpriseData(true);
 
-    // Setup quiet auto-refresh polling every 10 seconds
-    const intervalId = setInterval(() => {
-      fetchEnterpriseData(false);
-    }, 10000);
+    const intervalId = setInterval(() => { fetchEnterpriseData(false); }, 10000);
 
-    // --- REAL-TIME POSTGRESQL SUBSCRIPTIONS ---
     const client = getSupabaseClient();
     if (!client) return;
 
@@ -197,21 +164,16 @@ export default function App() {
     };
   }, [isLibLoaded]);
 
-  // --- PWA HANDLER ---
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
-    // Show PWA installation prompt
     deferredPrompt.prompt();
-    // Await decision response
     const { outcome } = await deferredPrompt.userChoice;
     console.log(`User installation choice outcome: ${outcome}`);
-    // Clear deferred stash
     setDeferredPrompt(null);
     setIsInstallable(false);
   };
 
-  // --- HANDLERS & LOGIC ---
-
+  // --- FIX: handleAddStaff — use data[0] not data to avoid array-as-child crash ---
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffName.trim()) return;
@@ -227,11 +189,9 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Flat state update with data instead of data array prevents React objects-as-child rendering crashes
-        setStaffList(prev => [...prev, data]);
+        // FIX: use data[0] (the single Staff object) not data (an array)
+        setStaffList(prev => [...prev, data[0]]);
         setNewStaffName('');
-        // Trigger safe auto-refresh immediately
-        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error adding staff to Supabase:", error.message);
@@ -246,12 +206,12 @@ export default function App() {
       const { error } = await client.from('staff').delete().eq('id', id);
       if (error) throw error;
       setStaffList(prev => prev.filter(s => s.id !== id));
-      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error removing staff from Supabase:", error.message);
     }
   };
 
+  // --- FIX: handleAddProduct — use data[0] not data ---
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim() || !newProductRate) return;
@@ -269,17 +229,17 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Flat state update with data instead of data array prevents React objects-as-child rendering crashes
-        setProductList(prev => [...prev, data]);
+        // FIX: use data[0] (the single Product object) not data (an array)
+        setProductList(prev => [...prev, data[0]]);
         setNewProductName('');
         setNewProductRate('');
-        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error adding product to Supabase:", error.message);
     }
   };
 
+  // --- FIX: handleUpdateProductRate — use data[0] not data ---
   const handleUpdateProductRate = async (id: string, newRate: string) => {
     const parsed = parseFloat(newRate);
     if (isNaN(parsed) || parsed < 0) return;
@@ -296,10 +256,9 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Flat state update with data instead of data array prevents React objects-as-child rendering crashes
-        setProductList(prev => prev.map(p => p.id === id ? data : p));
+        // FIX: use data[0] (the single Product object) not data (an array)
+        setProductList(prev => prev.map(p => p.id === id ? data[0] : p));
         setEditingProductId(null);
-        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error updating rate in Supabase:", error.message);
@@ -314,13 +273,11 @@ export default function App() {
       const { error } = await client.from('products').delete().eq('id', id);
       if (error) throw error;
       setProductList(prev => prev.filter(p => p.id !== id));
-      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error removing product from Supabase:", error.message);
     }
   };
 
-  // Live calculation helper for current modal entry
   const selectedProductObj = useMemo(() => {
     return productList.find(p => p.id === newTxProduct);
   }, [newTxProduct, productList]);
@@ -332,7 +289,7 @@ export default function App() {
     return qty * currentLiveRate;
   }, [newTxQuantity, currentLiveRate]);
 
-  // Submit dynamic disbursement log to Database
+  // --- FIX: handleLogDisbursement — use data[0] not data ---
   const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTxStaff || !newTxProduct || !newTxQuantity) return;
@@ -363,13 +320,12 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Flat state update with data instead of data array prevents React objects-as-child rendering crashes
-        setTransactions(prev => [data, ...prev]);
+        // FIX: use data[0] (the single Transaction object) not data (an array)
+        setTransactions(prev => [data[0], ...prev]);
         setNewTxStaff('');
         setNewTxProduct('');
         setNewTxQuantity('');
         setIsLogModalOpen(false);
-        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error logging disbursement to Supabase:", error.message);
@@ -384,13 +340,11 @@ export default function App() {
       const { error } = await client.from('transactions').delete().eq('id', txId);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => t.id !== txId));
-      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error deleting transaction from Supabase:", error.message);
     }
   };
 
-  // --- DERIVED METRICS ---
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       const matchStaff = filterStaff === 'All' || t.staff_id === filterStaff;
@@ -407,7 +361,6 @@ export default function App() {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
 
-  // Loading Screen
   if (!isLibLoaded || isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
@@ -425,15 +378,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#2C211A] font-sans antialiased selection:bg-[#EEDFCC] selection:text-[#5C4033]">
       
-      {/* GLOSSY DECORATIVE ORBS */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#F3ECE0] rounded-full blur-3xl opacity-60 -z-10 pointer-events-none" />
       <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-[#E8DFD0] rounded-full blur-3xl opacity-40 -z-10 pointer-events-none" />
 
-      {/* HEADER SECTION */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#FAF8F5]/85 border-b border-[#EBE3D5] px-6 py-4 transition-all duration-300">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           
-          {/* Logo & Brand Info */}
           <div className="flex items-center gap-4">
             <div className="flex items-center space-x-2">
               <img 
@@ -459,10 +409,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
             
-            {/* Dynamic PWA Install Button */}
             {isInstallable && (
               <button
                 onClick={handleInstallApp}
@@ -479,7 +427,6 @@ export default function App() {
               onClick={() => setIsConfigModalOpen(true)}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-[#D5C9B7] text-[#5C4033] hover:bg-[#F3EFE7] font-medium text-sm transition-all active:scale-95 shadow-sm"
             >
-              {/* Settings Icon */}
               <svg className="w-4 h-4 text-[#5C4033]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -491,7 +438,6 @@ export default function App() {
               onClick={() => setIsLogModalOpen(true)}
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm transition-all active:scale-95 shadow-md shadow-amber-900/10 hover:shadow-lg"
             >
-              {/* Plus Icon */}
               <svg className="w-4 h-4 text-[#F3ECE0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
@@ -502,18 +448,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTAINER */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         
-        {/* OVERVIEW STATS CARDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           
-          {/* Card 1: Total Sales Amount */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl p-6 border border-[#EBE3D5] shadow-sm flex flex-col justify-between hover:translate-y-[-2px] transition-transform duration-300">
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Total Disbursement Amount</span>
               <div className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-                {/* Money Icon */}
                 <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -525,12 +467,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Card 2: Total Units Distributed */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl p-6 border border-[#EBE3D5] shadow-sm flex flex-col justify-between hover:translate-y-[-2px] transition-transform duration-300">
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Quantity Distributed</span>
               <div className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-                {/* Package Icon */}
                 <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
@@ -542,12 +482,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Card 3: Active Staff */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl p-6 border border-[#EBE3D5] shadow-sm flex flex-col justify-between hover:translate-y-[-2px] transition-transform duration-300">
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Authorized Staff</span>
               <div className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-                {/* Users Icon */}
                 <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
@@ -559,12 +497,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Card 4: Product Catalogs */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl p-6 border border-[#EBE3D5] shadow-sm flex flex-col justify-between hover:translate-y-[-2px] transition-transform duration-300">
             <div className="flex justify-between items-start">
               <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Configured Products</span>
               <div className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-                {/* Folder/List Icon */}
                 <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
@@ -578,11 +514,10 @@ export default function App() {
 
         </div>
 
-        {/* PRIMARY CONTROLS PANEL (FILTER BAR) */}
         <div className="bg-white/50 backdrop-blur-md rounded-2xl border border-[#EBE3D5] p-5 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 11.293A1 1 0 013 10.586V4z" />
               </svg>
             </span>
@@ -594,7 +529,6 @@ export default function App() {
 
           <div className="flex flex-wrap items-center gap-3">
             
-            {/* Filter by Staff */}
             <div className="flex flex-col">
               <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1 px-1">Staff Member</label>
               <select
@@ -609,7 +543,6 @@ export default function App() {
               </select>
             </div>
 
-            {/* Filter by Product */}
             <div className="flex flex-col">
               <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1 px-1">Product SKU</label>
               <select
@@ -624,7 +557,6 @@ export default function App() {
               </select>
             </div>
 
-            {/* Clear Filter Indicator */}
             {(filterStaff !== 'All' || filterProduct !== 'All') && (
               <button
                 onClick={() => { setFilterStaff('All'); setFilterProduct('All'); }}
@@ -640,7 +572,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* LEDGER & LIVE CALCULATION SUMMARY TABLE */}
         <div className="bg-white rounded-3xl border border-[#EBE3D5] overflow-hidden shadow-sm">
           
           <div className="px-6 py-5 border-b border-[#EBE3D5] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#FDFBF7]">
@@ -678,7 +609,6 @@ export default function App() {
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-amber-900/40 text-sm">
                       <div className="max-w-xs mx-auto flex flex-col items-center">
-                        {/* Empty Document Icon */}
                         <svg className="w-10 h-10 text-amber-900/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
@@ -742,7 +672,6 @@ export default function App() {
             </table>
           </div>
 
-          {/* TABLE SUMMARY BAR */}
           {filteredTransactions.length > 0 && (
             <div className="bg-[#FAF5EE]/40 px-6 py-4 border-t border-[#EBE3D5] flex flex-col sm:flex-row items-center justify-between gap-4">
               <span className="text-xs font-semibold text-[#5C4033] uppercase tracking-wide">
@@ -765,7 +694,6 @@ export default function App() {
 
       </main>
 
-      {/* FOOTER */}
       <footer className="max-w-7xl mx-auto px-6 py-12 mt-12 border-t border-[#EBE3D5]">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-amber-900/50">
           <div className="flex items-center gap-3">
@@ -794,24 +722,20 @@ export default function App() {
       </footer>
 
 
-      {/* ================= MODAL: QUICK UPDATE / DISBURSEMENT ENTRY ================= */}
+      {/* MODAL: LOG DISBURSEMENT */}
       {isLogModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           
-          {/* Backdrop */}
           <div 
             onClick={() => setIsLogModalOpen(false)}
             className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" 
           />
 
-          {/* Modal Box */}
           <div className="relative bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-lg overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300">
             
-            {/* Header */}
             <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-[#FDFBF7]">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-[#5C4033] rounded-xl text-white">
-                  {/* Ledger Plus Icon */}
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -831,10 +755,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleLogDisbursement} className="p-6 space-y-5">
+            <div className="p-6 space-y-5">
               
-              {/* Select Staff */}
               <div>
                 <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
                   1. Select Staff Member
@@ -852,7 +774,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Select Product */}
               <div>
                 <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
                   2. Select Product SKU
@@ -870,7 +791,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Quantity */}
               <div>
                 <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
                   3. Quantity (Nos)
@@ -886,7 +806,6 @@ export default function App() {
                 />
               </div>
 
-              {/* CALCULATED PREVIEW CARD */}
               <div className="bg-[#FAF5EE] rounded-2xl p-4 border border-[#EBE3D5] flex flex-col justify-between">
                 <span className="text-[10px] font-bold text-amber-900/50 uppercase tracking-wide">
                   Live Engine Calculation
@@ -907,7 +826,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Form Actions */}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
@@ -917,34 +835,32 @@ export default function App() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleLogDisbursement}
                   className="w-1/2 py-3 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm shadow-md transition-all active:scale-95"
                 >
                   Confirm Log
                 </button>
               </div>
 
-            </form>
+            </div>
 
           </div>
         </div>
       )}
 
 
-      {/* ================= MODAL: RATES & STAFF SYSTEM CONFIGURATION ================= */}
+      {/* MODAL: RATES & STAFF CONFIGURATION */}
       {isConfigModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           
-          {/* Backdrop */}
           <div 
             onClick={() => setIsConfigModalOpen(false)}
             className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" 
           />
 
-          {/* Modal Box */}
           <div className="relative bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-4xl overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300">
             
-            {/* Header */}
             <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-[#FDFBF7]">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-[#5C4033] rounded-xl text-white">
@@ -967,35 +883,41 @@ export default function App() {
               </button>
             </div>
 
-            {/* Split Content: Left Staff, Right Products */}
             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#EBE3D5] max-h-[70vh] overflow-y-auto">
               
-              {/* LEFT COLUMN: STAFF LIST MANAGER */}
+              {/* LEFT: STAFF */}
               <div className="p-6 space-y-6">
                 <div>
                   <h4 className="font-bold text-sm text-[#2C211A]">Staff Management</h4>
                   <p className="text-xs text-amber-900/50">Add or revoke supervisor authorizations</p>
                 </div>
 
-                {/* Staff Add Form */}
-                <form onSubmit={handleAddStaff} className="flex gap-2">
+                {/* Staff Add — uses onClick instead of form onSubmit to prevent any page reload */}
+                <div className="flex gap-2">
                   <input
-                    required
                     type="text"
                     placeholder="Enter Staff Name (e.g. Staff E)"
                     value={newStaffName}
                     onChange={(e) => setNewStaffName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newStaffName.trim()) handleAddStaff(e as any);
+                      }
+                    }}
                     className="flex-1 bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
                   />
                   <button
-                    type="submit"
-                    className="px-4 py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
+                    type="button"
+                    onClick={(e) => {
+                      if (newStaffName.trim()) handleAddStaff(e as any);
+                    }}
+                    className="px-4 py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm active:scale-95"
                   >
                     Add Staff
                   </button>
-                </form>
+                </div>
 
-                {/* Staff Cards/Rows */}
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                   {staffList.map((staff) => (
                     <div 
@@ -1009,6 +931,7 @@ export default function App() {
                         <span className="text-xs font-semibold text-[#2C211A]">{staff.name}</span>
                       </div>
                       <button
+                        type="button"
                         onClick={() => handleRemoveStaff(staff.id)}
                         className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
                         title="Remove Staff"
@@ -1026,18 +949,17 @@ export default function App() {
 
               </div>
 
-              {/* RIGHT COLUMN: PRODUCT RATE CONFIGURATOR */}
+              {/* RIGHT: PRODUCTS */}
               <div className="p-6 space-y-6">
                 <div>
                   <h4 className="font-bold text-sm text-[#2C211A]">Product Rate Engine Configurator</h4>
                   <p className="text-xs text-amber-900/50">Edit current product values and prices centrally</p>
                 </div>
 
-                {/* Product Add Form */}
-                <form onSubmit={handleAddProduct} className="space-y-2">
+                {/* Product Add — same onClick pattern */}
+                <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <input
-                      required
                       type="text"
                       placeholder="Product SKU Name"
                       value={newProductName}
@@ -1045,7 +967,6 @@ export default function App() {
                       className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
                     />
                     <input
-                      required
                       type="number"
                       step="0.01"
                       min="0"
@@ -1056,14 +977,16 @@ export default function App() {
                     />
                   </div>
                   <button
-                    type="submit"
-                    className="w-full py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
+                    type="button"
+                    onClick={(e) => {
+                      if (newProductName.trim() && newProductRate) handleAddProduct(e as any);
+                    }}
+                    className="w-full py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm active:scale-95"
                   >
                     Add Product & Assign Rate
                   </button>
-                </form>
+                </div>
 
-                {/* Product List Ledger */}
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                   {productList.map((product) => (
                     <div 
@@ -1086,6 +1009,7 @@ export default function App() {
                                 onChange={(e) => setEditingRateValue(e.target.value)}
                               />
                               <button
+                                type="button"
                                 onClick={() => handleUpdateProductRate(product.id, editingRateValue)}
                                 className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
                                 title="Save Rate"
@@ -1095,6 +1019,7 @@ export default function App() {
                                 </svg>
                               </button>
                               <button
+                                type="button"
                                 onClick={() => setEditingProductId(null)}
                                 className="p-1 text-amber-900/40 hover:bg-gray-100 rounded"
                                 title="Cancel"
@@ -1110,6 +1035,7 @@ export default function App() {
                                 ₹ {Number(product.rate).toFixed(2)}
                               </span>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setEditingProductId(product.id);
                                   setEditingRateValue(product.rate.toString());
@@ -1122,6 +1048,7 @@ export default function App() {
                                 </svg>
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleRemoveProduct(product.id)}
                                 className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
                                 title="Remove Product"
@@ -1145,9 +1072,9 @@ export default function App() {
 
             </div>
 
-            {/* Config Footer */}
             <div className="p-6 border-t border-[#EBE3D5] flex justify-end bg-[#FAF5EE]/30">
               <button
+                type="button"
                 onClick={() => setIsConfigModalOpen(false)}
                 className="px-6 py-2.5 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-semibold text-xs transition-colors shadow-sm"
               >
