@@ -68,6 +68,11 @@ export default function App() {
   const [filterStaff, setFilterStaff] = useState<string>('All');
   const [filterProduct, setFilterProduct] = useState<string>('All');
 
+  // --- DATE/TIME FILTER STATES ---
+  const [datePreset, setDatePreset] = useState<string>('All'); // 'All', 'Today', 'Yesterday', 'Month', 'Custom'
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
   // --- SCRIPT INJECTOR ---
   useEffect(() => {
     // @ts-ignore
@@ -173,7 +178,6 @@ export default function App() {
     setIsInstallable(false);
   };
 
-  // --- FIX: handleAddStaff — use data[0] not data to avoid array-as-child crash ---
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffName.trim()) return;
@@ -189,8 +193,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // FIX: use data[0] (the single Staff object) not data (an array)
-        setStaffList(prev => [...prev, data[0]]);
+        setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
     } catch (error: any) {
@@ -211,7 +214,6 @@ export default function App() {
     }
   };
 
-  // --- FIX: handleAddProduct — use data[0] not data ---
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim() || !newProductRate) return;
@@ -229,8 +231,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // FIX: use data[0] (the single Product object) not data (an array)
-        setProductList(prev => [...prev, data[0]]);
+        setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
       }
@@ -239,7 +240,6 @@ export default function App() {
     }
   };
 
-  // --- FIX: handleUpdateProductRate — use data[0] not data ---
   const handleUpdateProductRate = async (id: string, newRate: string) => {
     const parsed = parseFloat(newRate);
     if (isNaN(parsed) || parsed < 0) return;
@@ -256,8 +256,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // FIX: use data[0] (the single Product object) not data (an array)
-        setProductList(prev => prev.map(p => p.id === id ? data[0] : p));
+        setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
     } catch (error: any) {
@@ -289,7 +288,6 @@ export default function App() {
     return qty * currentLiveRate;
   }, [newTxQuantity, currentLiveRate]);
 
-  // --- FIX: handleLogDisbursement — use data[0] not data ---
   const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTxStaff || !newTxProduct || !newTxQuantity) return;
@@ -320,8 +318,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // FIX: use data[0] (the single Transaction object) not data (an array)
-        setTransactions(prev => [data[0], ...prev]);
+        setTransactions(prev => [data, ...prev]);
         setNewTxStaff('');
         setNewTxProduct('');
         setNewTxQuantity('');
@@ -345,13 +342,65 @@ export default function App() {
     }
   };
 
+  // --- ADVANCED DATE FILTER RESOLVER ---
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // 1. Staff Filter
       const matchStaff = filterStaff === 'All' || t.staff_id === filterStaff;
+      
+      // 2. Product Filter
       const matchProduct = filterProduct === 'All' || t.product_id === filterProduct;
-      return matchStaff && matchProduct;
+
+      if (!matchStaff || !matchProduct) return false;
+
+      // 3. Date Range Filter
+      if (datePreset === 'All') return true;
+
+      // Fallback timestamp parse (Postgres created_at timestamp preferred, local formatted string as fallback)
+      const txDate = t.created_at ? new Date(t.created_at) : new Date();
+
+      // Normalize today to start-of-day/end-of-day for perfect calculations
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+      if (datePreset === 'Today') {
+        return txDate >= startOfToday && txDate <= endOfToday;
+      }
+
+      if (datePreset === 'Yesterday') {
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const endOfYesterday = new Date(endOfToday);
+        endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+        return txDate >= startOfYesterday && txDate <= endOfYesterday;
+      }
+
+      if (datePreset === 'Month') {
+        const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        return txDate >= startOfThisMonth && txDate <= endOfToday;
+      }
+
+      if (datePreset === 'Custom') {
+        let isAfterStart = true;
+        let isBeforeEnd = true;
+
+        if (startDate) {
+          const customStart = new Date(startDate);
+          customStart.setHours(0, 0, 0, 0);
+          isAfterStart = txDate >= customStart;
+        }
+        if (endDate) {
+          const customEnd = new Date(endDate);
+          customEnd.setHours(23, 59, 59, 999);
+          isBeforeEnd = txDate <= customEnd;
+        }
+        return isAfterStart && isBeforeEnd;
+      }
+
+      return true;
     });
-  }, [transactions, filterStaff, filterProduct]);
+  }, [transactions, filterStaff, filterProduct, datePreset, startDate, endDate]);
 
   const totalDisbursedAmount = useMemo(() => {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.total), 0);
@@ -514,27 +563,51 @@ export default function App() {
 
         </div>
 
-        <div className="bg-white/50 backdrop-blur-md rounded-2xl border border-[#EBE3D5] p-5 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-              <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 11.293A1 1 0 013 10.586V4z" />
-              </svg>
-            </span>
-            <div>
-              <h2 className="text-sm font-bold text-[#2C211A]">Filter Ledger Logs</h2>
-              <p className="text-xs text-amber-900/50">Filter calculations by authorized personnel or target catalog</p>
+        {/* PRIMARY CONTROLS PANEL (FILTER BAR WITH DYNAMIC DATES) */}
+        <div className="bg-white/50 backdrop-blur-md rounded-2xl border border-[#EBE3D5] p-5 mb-8 space-y-4">
+          
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-[#EBE3D5]/50">
+            <div className="flex items-center gap-3">
+              <span className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
+                <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 11.293A1 1 0 013 10.586V4z" />
+                </svg>
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-[#2C211A]">Filter Ledger Logs</h2>
+                <p className="text-xs text-amber-900/50">Filter calculations by personnel, catalog SKUs, and date periods</p>
+              </div>
             </div>
+
+            {/* Clear Filter Indicator */}
+            {(filterStaff !== 'All' || filterProduct !== 'All' || datePreset !== 'All' || startDate || endDate) && (
+              <button
+                onClick={() => { 
+                  setFilterStaff('All'); 
+                  setFilterProduct('All'); 
+                  setDatePreset('All');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="px-3 py-1.5 bg-[#FAF5EE] text-xs text-[#5C4033] hover:bg-[#FAF0E6] rounded-xl border border-[#D5C9B7] font-medium flex items-center gap-1.5 transition-colors duration-150 self-start md:self-auto"
+              >
+                Clear All Filters
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
+            {/* Filter by Staff */}
             <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1 px-1">Staff Member</label>
+              <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1.5 px-1 tracking-wider">Staff Member</label>
               <select
                 value={filterStaff}
                 onChange={(e) => setFilterStaff(e.target.value)}
-                className="bg-white hover:bg-[#FAF8F5] border border-[#D5C9B7] rounded-xl px-4 py-2 text-xs font-medium focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-colors cursor-pointer"
+                className="bg-white hover:bg-[#FAF8F5] border border-[#D5C9B7] rounded-xl px-4 py-2.5 text-xs font-medium focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-colors cursor-pointer"
               >
                 <option value="All">All Staff Members</option>
                 {staffList.map(s => (
@@ -543,12 +616,13 @@ export default function App() {
               </select>
             </div>
 
+            {/* Filter by Product */}
             <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1 px-1">Product SKU</label>
+              <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1.5 px-1 tracking-wider">Product SKU</label>
               <select
                 value={filterProduct}
                 onChange={(e) => setFilterProduct(e.target.value)}
-                className="bg-white hover:bg-[#FAF8F5] border border-[#D5C9B7] rounded-xl px-4 py-2 text-xs font-medium focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-colors cursor-pointer"
+                className="bg-white hover:bg-[#FAF8F5] border border-[#D5C9B7] rounded-xl px-4 py-2.5 text-xs font-medium focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-colors cursor-pointer"
               >
                 <option value="All">All Products</option>
                 {productList.map(p => (
@@ -557,21 +631,49 @@ export default function App() {
               </select>
             </div>
 
-            {(filterStaff !== 'All' || filterProduct !== 'All') && (
-              <button
-                onClick={() => { setFilterStaff('All'); setFilterProduct('All'); }}
-                className="mt-4 px-3 py-2 text-xs text-[#5C4033] hover:text-[#4E3629] font-medium flex items-center gap-1 transition-colors"
+            {/* Filter by Date Preset */}
+            <div className="flex flex-col">
+              <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1.5 px-1 tracking-wider">Date Period</label>
+              <select
+                value={datePreset}
+                onChange={(e) => setDatePreset(e.target.value)}
+                className="bg-white hover:bg-[#FAF8F5] border border-[#D5C9B7] rounded-xl px-4 py-2.5 text-xs font-medium focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-colors cursor-pointer"
               >
-                Reset Filter
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+                <option value="All">All Time</option>
+                <option value="Today">Today</option>
+                <option value="Yesterday">Yesterday</option>
+                <option value="Month">This Month</option>
+                <option value="Custom">Custom Range</option>
+              </select>
+            </div>
+
+            {/* Filter by Custom Date Picker */}
+            {datePreset === 'Custom' && (
+              <div className="flex flex-col lg:col-span-1">
+                <label className="text-[10px] font-bold text-[#5C4033] uppercase mb-1.5 px-1 tracking-wider">Custom Boundaries</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="bg-white border border-[#D5C9B7] rounded-xl px-2 py-2 text-[11px] font-medium text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
+                    placeholder="Start"
+                  />
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="bg-white border border-[#D5C9B7] rounded-xl px-2 py-2 text-[11px] font-medium text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
+                    placeholder="End"
+                  />
+                </div>
+              </div>
             )}
 
           </div>
         </div>
 
+        {/* LEDGER & LIVE CALCULATION SUMMARY TABLE */}
         <div className="bg-white rounded-3xl border border-[#EBE3D5] overflow-hidden shadow-sm">
           
           <div className="px-6 py-5 border-b border-[#EBE3D5] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#FDFBF7]">
@@ -892,7 +994,6 @@ export default function App() {
                   <p className="text-xs text-amber-900/50">Add or revoke supervisor authorizations</p>
                 </div>
 
-                {/* Staff Add — uses onClick instead of form onSubmit to prevent any page reload */}
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -956,7 +1057,6 @@ export default function App() {
                   <p className="text-xs text-amber-900/50">Edit current product values and prices centrally</p>
                 </div>
 
-                {/* Product Add — same onClick pattern */}
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -1053,7 +1153,7 @@ export default function App() {
                                 className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
                                 title="Remove Product"
                               >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
