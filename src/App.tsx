@@ -98,32 +98,43 @@ export default function App() {
   }, []);
 
   // --- SUPABASE DATA FETCHING ---
+  const fetchEnterpriseData = async (showLoader = false) => {
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    if (showLoader) {
+      setIsLoading(true);
+    }
+    try {
+      const [staffRes, productsRes, txRes] = await Promise.all([
+        client.from('staff').select('*'),
+        client.from('products').select('*'),
+        client.from('transactions').select('*').order('created_at', { ascending: false })
+      ]);
+
+      if (staffRes.data) setStaffList(staffRes.data);
+      if (productsRes.data) setProductList(productsRes.data);
+      if (txRes.data) setTransactions(txRes.data);
+    } catch (err) {
+      console.error("Error fetching data from Supabase:", err);
+    } finally {
+      if (showLoader) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Setup initial fetch & polling
   useEffect(() => {
     if (!isLibLoaded) return;
 
-    const fetchEnterpriseData = async () => {
-      const client = getSupabaseClient();
-      if (!client) return;
+    // Initial load with full screen loader
+    fetchEnterpriseData(true);
 
-      setIsLoading(true);
-      try {
-        const [staffRes, productsRes, txRes] = await Promise.all([
-          client.from('staff').select('*'),
-          client.from('products').select('*'),
-          client.from('transactions').select('*').order('created_at', { ascending: false })
-        ]);
-
-        if (staffRes.data) setStaffList(staffRes.data);
-        if (productsRes.data) setProductList(productsRes.data);
-        if (txRes.data) setTransactions(txRes.data);
-      } catch (err) {
-        console.error("Error fetching data from Supabase:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchEnterpriseData();
+    // Setup quiet auto-refresh polling every 10 seconds
+    const intervalId = setInterval(() => {
+      fetchEnterpriseData(false);
+    }, 10000);
 
     // --- REAL-TIME POSTGRESQL SUBSCRIPTIONS ---
     const client = getSupabaseClient();
@@ -154,6 +165,7 @@ export default function App() {
       client.removeChannel(staffSubscription);
       client.removeChannel(productsSubscription);
       client.removeChannel(txSubscription);
+      clearInterval(intervalId);
     };
   }, [isLibLoaded]);
 
@@ -174,9 +186,11 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly append flat data instead of the whole array [data] to trigger direct React updates without a refresh
-        setStaffList([...staffList, data]);
+        // Flat state update prevents React objects-as-child crash
+        setStaffList(prev => [...prev, data]);
         setNewStaffName('');
+        // Trigger safe auto-refresh immediately
+        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error adding staff to Supabase:", error.message);
@@ -190,7 +204,8 @@ export default function App() {
     try {
       const { error } = await client.from('staff').delete().eq('id', id);
       if (error) throw error;
-      setStaffList(staffList.filter(s => s.id !== id));
+      setStaffList(prev => prev.filter(s => s.id !== id));
+      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error removing staff from Supabase:", error.message);
     }
@@ -213,10 +228,10 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly append flat data instead of the whole array [data] to trigger direct React updates without a refresh
-        setProductList([...productList, data]);
+        setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
+        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error adding product to Supabase:", error.message);
@@ -239,9 +254,9 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly map the updated flat data instead of the raw array to trigger direct React updates without a refresh
-        setProductList(productList.map(p => p.id === id ? data : p));
+        setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
+        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error updating rate in Supabase:", error.message);
@@ -255,7 +270,8 @@ export default function App() {
     try {
       const { error } = await client.from('products').delete().eq('id', id);
       if (error) throw error;
-      setProductList(productList.filter(p => p.id !== id));
+      setProductList(prev => prev.filter(p => p.id !== id));
+      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error removing product from Supabase:", error.message);
     }
@@ -304,13 +320,12 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly append flat data instead of the whole array [data] to trigger direct React updates without a refresh
-        setTransactions([data, ...transactions]);
-        // Reset fields & close modal
+        setTransactions(prev => [data, ...prev]);
         setNewTxStaff('');
         setNewTxProduct('');
         setNewTxQuantity('');
         setIsLogModalOpen(false);
+        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error logging disbursement to Supabase:", error.message);
@@ -324,7 +339,8 @@ export default function App() {
     try {
       const { error } = await client.from('transactions').delete().eq('id', txId);
       if (error) throw error;
-      setTransactions(transactions.filter(t => t.id !== txId));
+      setTransactions(prev => prev.filter(t => t.id !== txId));
+      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error deleting transaction from Supabase:", error.message);
     }
@@ -508,7 +524,7 @@ export default function App() {
         <div className="bg-white/50 backdrop-blur-md rounded-2xl border border-[#EBE3D5] p-5 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="p-2 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 11.293A1 1 0 013 10.586V4z" />
               </svg>
             </span>
@@ -575,7 +591,7 @@ export default function App() {
                 Live Calculation Ledger Summary
                 <span className="text-xs font-normal text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Online Live Summary
+                  Online Live Summary (Updates every 10s)
                 </span>
               </h3>
               <p className="text-xs text-amber-900/50">Auto-evaluates Rate × Quantity for total sums across distribution events</p>
