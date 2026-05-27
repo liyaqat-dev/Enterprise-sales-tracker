@@ -29,7 +29,7 @@
   <meta property="og:description" content="Supervisor-grade product disbursement tracker." />
   <meta property="og:image" content="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" />
 
-  <!-- ── PWA Manifest ─────────────────────────────────── -->
+  <!-- ── PWA Manifest (THIS is the key line for install prompt) ── -->
   <link rel="manifest" href="/manifest.json" />
 
   <!-- ── Favicon ──────────────────────────────────────── -->
@@ -39,66 +39,40 @@
   <style>
     :root {
       --sat: env(safe-area-inset-top);
-      --sar: env(safe-area-inset-right);
       --sab: env(safe-area-inset-bottom);
-      --sal: env(safe-area-inset-left);
     }
-    html, body, #root {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background-color: #FAF8F5;
-    }
-    /* Prevent flash of unstyled content */
-    #root:empty::before {
-      content: '';
-      display: block;
-    }
+    html, body { margin: 0; padding: 0; background-color: #FAF8F5; }
   </style>
 </head>
 <body>
 
-  <!-- React app mounts here -->
+  <!-- ── React mounts here — Vite injects the bundle script automatically ── -->
   <div id="root"></div>
 
-  <!--
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║  SERVICE WORKER REGISTRATION                                     ║
-    ║  Place this script at the end of <body>.                         ║
-    ║  The SW must be served from the same origin as your app.         ║
-    ║  File: /sw.js  (in public/ root for CRA / Vite)                  ║
-    ╚══════════════════════════════════════════════════════════════════╝
-  -->
+  <!-- ── THIS IS THE CRITICAL LINE VITE NEEDS — DO NOT REMOVE ── -->
+  <script type="module" src="/src/main.tsx"></script>
+
+  <!-- ── Service Worker Registration ─────────────────── -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/sw.js', { scope: '/' })
-          .then(registration => {
-            console.log('[PWA] Service Worker registered. Scope:', registration.scope);
-
-            // Listen for SW updates and prompt user to refresh
-            registration.addEventListener('updatefound', () => {
-              const newWorker = registration.installing;
+          .then(reg => {
+            console.log('[PWA] SW registered. Scope:', reg.scope);
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
               if (!newWorker) return;
-
               newWorker.addEventListener('statechange', () => {
-                if (
-                  newWorker.state === 'installed' &&
-                  navigator.serviceWorker.controller
-                ) {
-                  // New content available — you can surface a toast here
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                   console.log('[PWA] New version available. Refresh to update.');
                 }
               });
             });
           })
-          .catch(err => {
-            console.warn('[PWA] Service Worker registration failed:', err);
-          });
+          .catch(err => console.warn('[PWA] SW registration failed:', err));
       });
 
-      // Reload page when a new SW takes control (after the user refreshes)
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (refreshing) return;
