@@ -56,6 +56,10 @@ export default function App() {
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
 
+  // PWA Install Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState<boolean>(false);
+
   // New Transaction Form State
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxProduct, setNewTxProduct] = useState<string>('');
@@ -94,6 +98,30 @@ export default function App() {
 
     return () => {
       document.head.removeChild(script);
+    };
+  }, []);
+
+  // --- PWA INSTALLATION EVENT LISTENERS ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent automatic installation prompt banner from showing automatically
+      e.preventDefault();
+      // Stash the event so it can be triggered with our premium button
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    window.addEventListener('appinstalled', () => {
+      // Clear install stashes
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+      console.log('Enterprise Sales-Tracker was successfully installed.');
+    });
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
@@ -168,6 +196,19 @@ export default function App() {
       clearInterval(intervalId);
     };
   }, [isLibLoaded]);
+
+  // --- PWA HANDLER ---
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    // Show PWA installation prompt
+    deferredPrompt.prompt();
+    // Await decision response
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User installation choice outcome: ${outcome}`);
+    // Clear deferred stash
+    setDeferredPrompt(null);
+    setIsInstallable(false);
+  };
 
   // --- HANDLERS & LOGIC ---
 
@@ -417,6 +458,20 @@ export default function App() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            
+            {/* Dynamic PWA Install Button */}
+            {isInstallable && (
+              <button
+                onClick={handleInstallApp}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm transition-all active:scale-95 shadow-md hover:shadow-lg animate-bounce"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Install App
+              </button>
+            )}
+
             <button
               onClick={() => setIsConfigModalOpen(true)}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-[#D5C9B7] text-[#5C4033] hover:bg-[#F3EFE7] font-medium text-sm transition-all active:scale-95 shadow-sm"
