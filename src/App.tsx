@@ -174,6 +174,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly append flat data instead of the whole array [data]
         setStaffList([...staffList, data]);
         setNewStaffName('');
       }
@@ -212,6 +213,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly append flat data instead of the whole array [data]
         setProductList([...productList, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -237,6 +239,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly map the updated flat data instead of the raw array
         setProductList(productList.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -301,6 +304,7 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly append flat data instead of the whole array [data]
         setTransactions([data, ...transactions]);
         // Reset fields & close modal
         setNewTxStaff('');
