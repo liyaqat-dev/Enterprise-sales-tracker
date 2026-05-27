@@ -1,19 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
-
-// --- FIREBASE SETUP ---
-// @ts-ignore
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Sanitizing appId to replace any slashes with underscores so Firestore doesn't miscount path segments
-// @ts-ignore
-const appIdRaw = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const appId = appIdRaw.replace(/\//g, '_');
 
 // --- TYPE DEFINITIONS ---
 interface Staff {
@@ -35,19 +20,36 @@ interface Transaction {
   rate: number;
   total: number;
   timestamp: string;
-  created_at?: number;
+  created_at?: string;
+}
+
+// --- CLIENT LAZY LOADER FOR LIVE PREVIEW SUPPORT ---
+// Secure dynamic configuration values
+const supabaseUrl = 'https://aormlfkegnheawtqrtvx.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvcm1sZmtlZ25oZWF3dHFydHZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEwMDYsImV4cCI6MjA5NTM3NzAwNn0.pf4YCh2E4g5L_K6bM1WZZ5byiAWEp_2LzUbMke9OqNM';
+
+// We dynamically construct the client using a fallback window-bound library pattern to avoid compilation failures in isolated runtimes
+let supabaseClientInstance: any = null;
+
+function getSupabaseClient() {
+  if (supabaseClientInstance) return supabaseClientInstance;
+  
+  // @ts-ignore
+  if (typeof window !== 'undefined' && window.supabase) {
+    // @ts-ignore
+    supabaseClientInstance = window.supabase.createClient(supabaseUrl, supabaseKey);
+  }
+  return supabaseClientInstance;
 }
 
 export default function App() {
   // --- STATE MANAGEMENT WITH TYPES ---
-  const [user, setUser] = useState<User | null>(null);
-  
-  // States initialized as empty. Data will come from Database.
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [productList, setProductList] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
-  // Loading state for initial fetch
+  // Loading states
+  const [isLibLoaded, setIsLibLoaded] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Modal Control
@@ -74,121 +76,185 @@ export default function App() {
   const [filterStaff, setFilterStaff] = useState<string>('All');
   const [filterProduct, setFilterProduct] = useState<string>('All');
 
-  // --- AUTH & DATA FETCHING ---
+  // --- COMPILER INTEGRATION: SCRIPT INJECTOR ---
   useEffect(() => {
-    const initAuth = async () => {
-      // @ts-ignore
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        // @ts-ignore
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
-      }
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.supabase) {
+      setIsLibLoaded(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4/dist/umd/supabase.js';
+    script.async = true;
+    script.onload = () => {
+      setIsLibLoaded(true);
     };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    setIsLoading(true);
-
-    const staffRef = collection(db, 'artifacts', appId, 'users', user.uid, 'staff');
-    const productsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
-    const txRef = collection(db, 'artifacts', appId, 'users', user.uid, 'transactions');
-
-    const unsubStaff = onSnapshot(staffRef, (snapshot) => {
-      setStaffList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Staff)));
-    }, (error) => console.error(error));
-
-    const unsubProducts = onSnapshot(productsRef, (snapshot) => {
-      setProductList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    }, (error) => console.error(error));
-
-    const unsubTx = onSnapshot(txRef, (snapshot) => {
-      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      txs.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-      setTransactions(txs);
-      setIsLoading(false);
-    }, (error) => {
-      console.error(error);
-      setIsLoading(false);
-    });
+    document.head.appendChild(script);
 
     return () => {
-      unsubStaff();
-      unsubProducts();
-      unsubTx();
+      document.head.removeChild(script);
     };
-  }, [user]);
+  }, []);
+
+  // --- SUPABASE DATA FETCHING ---
+  useEffect(() => {
+    if (!isLibLoaded) return;
+
+    const fetchEnterpriseData = async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+
+      setIsLoading(true);
+      try {
+        const [staffRes, productsRes, txRes] = await Promise.all([
+          client.from('staff').select('*'),
+          client.from('products').select('*'),
+          client.from('transactions').select('*').order('created_at', { ascending: false })
+        ]);
+
+        if (staffRes.data) setStaffList(staffRes.data);
+        if (productsRes.data) setProductList(productsRes.data);
+        if (txRes.data) setTransactions(txRes.data);
+      } catch (err) {
+        console.error("Error fetching data from Supabase:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEnterpriseData();
+
+    // --- REAL-TIME POSTGRESQL SUBSCRIPTIONS ---
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    const staffSubscription = client
+      .channel('staff-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => {
+        client.from('staff').select('*').then(({ data }: any) => data && setStaffList(data));
+      })
+      .subscribe();
+
+    const productsSubscription = client
+      .channel('products-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        client.from('products').select('*').then(({ data }: any) => data && setProductList(data));
+      })
+      .subscribe();
+
+    const txSubscription = client
+      .channel('transactions-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        client.from('transactions').select('*').order('created_at', { ascending: false }).then(({ data }: any) => data && setTransactions(data));
+      })
+      .subscribe();
+
+    return () => {
+      client.removeChannel(staffSubscription);
+      client.removeChannel(productsSubscription);
+      client.removeChannel(txSubscription);
+    };
+  }, [isLibLoaded]);
 
   // --- HANDLERS & LOGIC ---
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffName.trim() || !user) return;
+    if (!newStaffName.trim()) return;
     
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'staff'), {
-        name: newStaffName.trim(),
-        created_at: Date.now()
-      });
-      setNewStaffName('');
+      const { data, error } = await client
+        .from('staff')
+        .insert([{ name: newStaffName.trim() }])
+        .select();
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setStaffList([...staffList, data]);
+        setNewStaffName('');
+      }
     } catch (error: any) {
-      console.error("Error adding staff:", error.message);
+      console.error("Error adding staff to Supabase:", error.message);
     }
   };
 
   const handleRemoveStaff = async (id: string) => {
-    if (!user) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'staff', id));
+      const { error } = await client.from('staff').delete().eq('id', id);
+      if (error) throw error;
+      setStaffList(staffList.filter(s => s.id !== id));
     } catch (error: any) {
-      console.error("Error removing staff:", error.message);
+      console.error("Error removing staff from Supabase:", error.message);
     }
   };
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProductName.trim() || !newProductRate || !user) return;
+    if (!newProductName.trim() || !newProductRate) return;
     const rateVal = parseFloat(newProductRate);
     if (isNaN(rateVal) || rateVal < 0) return;
 
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'products'), {
-        name: newProductName.trim(),
-        rate: rateVal,
-        created_at: Date.now()
-      });
-      setNewProductName('');
-      setNewProductRate('');
+      const { data, error } = await client
+        .from('products')
+        .insert([{ name: newProductName.trim(), rate: rateVal }])
+        .select();
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setProductList([...productList, data]);
+        setNewProductName('');
+        setNewProductRate('');
+      }
     } catch (error: any) {
-      console.error("Error adding product:", error.message);
+      console.error("Error adding product to Supabase:", error.message);
     }
   };
 
   const handleUpdateProductRate = async (id: string, newRate: string) => {
-    if (!user) return;
     const parsed = parseFloat(newRate);
     if (isNaN(parsed) || parsed < 0) return;
     
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', id), {
-        rate: parsed
-      });
-      setEditingProductId(null);
+      const { data, error } = await client
+        .from('products')
+        .update({ rate: parsed })
+        .eq('id', id)
+        .select();
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setProductList(productList.map(p => p.id === id ? data : p));
+        setEditingProductId(null);
+      }
     } catch (error: any) {
-      console.error("Error updating rate:", error.message);
+      console.error("Error updating rate in Supabase:", error.message);
     }
   };
 
   const handleRemoveProduct = async (id: string) => {
-    if (!user) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', id));
+      const { error } = await client.from('products').delete().eq('id', id);
+      if (error) throw error;
+      setProductList(productList.filter(p => p.id !== id));
     } catch (error: any) {
-      console.error("Error removing product:", error.message);
+      console.error("Error removing product from Supabase:", error.message);
     }
   };
 
@@ -207,42 +273,56 @@ export default function App() {
   // Submit dynamic disbursement log to Database
   const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTxStaff || !newTxProduct || !newTxQuantity || !user) return;
+    if (!newTxStaff || !newTxProduct || !newTxQuantity) return;
     const qty = parseInt(newTxQuantity);
     if (isNaN(qty) || qty <= 0) return;
 
     const prod = productList.find(p => p.id === newTxProduct);
     if (!prod) return;
 
+    const client = getSupabaseClient();
+    if (!client) return;
+
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString();
     const total = qty * prod.rate;
 
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), {
-        staff_id: newTxStaff,
-        product_id: newTxProduct,
-        quantity: qty,
-        rate: prod.rate,
-        total: total,
-        timestamp: timestamp,
-        created_at: Date.now()
-      });
-      // Reset fields & close modal
-      setNewTxStaff('');
-      setNewTxProduct('');
-      setNewTxQuantity('');
-      setIsLogModalOpen(false);
+      const { data, error } = await client
+        .from('transactions')
+        .insert([{
+          staff_id: newTxStaff,
+          product_id: newTxProduct,
+          quantity: qty,
+          rate: prod.rate,
+          total: total,
+          timestamp: timestamp
+        }])
+        .select();
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setTransactions([data, ...transactions]);
+        // Reset fields & close modal
+        setNewTxStaff('');
+        setNewTxProduct('');
+        setNewTxQuantity('');
+        setIsLogModalOpen(false);
+      }
     } catch (error: any) {
-      console.error("Error logging disbursement:", error.message);
+      console.error("Error logging disbursement to Supabase:", error.message);
     }
   };
 
   const handleDeleteTransaction = async (txId: string) => {
-    if (!user) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', txId));
+      const { error } = await client.from('transactions').delete().eq('id', txId);
+      if (error) throw error;
+      setTransactions(transactions.filter(t => t.id !== txId));
     } catch (error: any) {
-      console.error("Error deleting transaction:", error.message);
+      console.error("Error deleting transaction from Supabase:", error.message);
     }
   };
 
@@ -263,12 +343,16 @@ export default function App() {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
 
-  if (isLoading) {
+  // Loading Screen
+  if (!isLibLoaded || isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-[#D5C9B7] border-t-[#5C4033] rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-[#5C4033] font-semibold text-sm">Syncing Enterprise Vault...</p>
+          {!isLibLoaded && (
+            <p className="text-xs text-amber-900/40 mt-1">Bootstrapping Database Services...</p>
+          )}
         </div>
       </div>
     );
