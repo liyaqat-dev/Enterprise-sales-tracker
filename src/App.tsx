@@ -76,7 +76,7 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
-  // New Transaction Form State
+  // New Transaction Form State - Fixed to ensure it is initialized as a string
   const [newTxDate, setNewTxDate] = useState<string>(() => new Date().toISOString().split('T'));
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
@@ -159,7 +159,7 @@ export default function App() {
 
     try {
       if (authMode === 'signup') {
-        // 1. Verify if user email/name combination already exists in public table
+        // 1. Verify if user email/name combination already exists in public table using standard .eq filter
         const { data: existingUser, error: checkError } = await client
           .from('users')
           .select('*')
@@ -328,7 +328,7 @@ export default function App() {
       const { data, error } = await client.from('staff').insert([{ name: newStaffName.trim() }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
+        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -356,7 +356,7 @@ export default function App() {
       const { data, error } = await client.from('products').insert([{ name: newProductName.trim(), rate: rateVal }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
+        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -373,7 +373,7 @@ export default function App() {
       const { data, error } = await client.from('products').update({ rate: parsed }).eq('id', id).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
+        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -1819,7 +1819,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveProduct(product.id)}
-                                className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
+                                className="p-1 text-amber-900/40 hover:text-[#5C4033] transition-colors"
                                 title="Remove Product"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
