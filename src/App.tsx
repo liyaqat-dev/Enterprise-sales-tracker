@@ -447,7 +447,7 @@ export default function App() {
 
     if (type === 'minimal') {
       // Create Minimal Report AOA (Array of Arrays) showing overall totals per staff
-      aoa.push(['Timestamp / Date', 'Staff Member', 'Overall Total (Rs)']);
+      aoa.push(['Date', 'Staff Member', 'Overall Total (Rs)']);
       
       const staffTotals: { [key: string]: number } = {};
       
