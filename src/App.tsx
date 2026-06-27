@@ -52,9 +52,11 @@ export default function App() {
   
   const [session, setSession] = useState<any>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
+  
+  // Custom Name-based Auth
   const [authName, setAuthName] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -139,29 +141,45 @@ export default function App() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!authName.trim()) {
+      setAuthError('Please enter your name.');
+      return;
+    }
+
     setAuthLoading(true);
     setAuthError('');
     const client = getSupabaseClient();
 
+    // Map Name directly to a secure email format behind the scenes
+    const generatedEmail = `${authName.trim().replace(/\s+/g, '').toLowerCase()}@safa.com`;
+    // Master Access Control: Check password exactly during login/signup to grant role
+    const userRole = authPassword === '786786' ? 'admin' : 'staff';
+
     try {
       if (authMode === 'signup') {
         const { error } = await client.auth.signUp({
-          email: authEmail,
+          email: generatedEmail,
           password: authPassword,
-          options: { data: { full_name: authName } }
+          options: { data: { full_name: authName, role: userRole } }
         });
         if (error) throw error;
-        alert('Signup successful! You can now log in.');
+        alert('Registration successful! You can now log in.');
         setAuthMode('login');
       } else {
         const { error } = await client.auth.signInWithPassword({
-          email: authEmail,
+          email: generatedEmail,
           password: authPassword
         });
         if (error) throw error;
+        
+        // Dynamically update user metadata on successful login to ensure proper role mapping 
+        // incase they are an old testing account or upgraded their password.
+        await client.auth.updateUser({
+          data: { role: userRole, full_name: authName }
+        });
       }
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
+      setAuthError(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
       setAuthLoading(false);
     }
@@ -171,7 +189,19 @@ export default function App() {
     const client = getSupabaseClient();
     await client.auth.signOut();
     setSession(null);
+    setAuthName('');
+    setAuthPassword('');
   };
+
+  // Extract precise role assignment from the persistent session metadata
+  const isAdmin = session?.user?.user_metadata?.role === 'admin';
+
+  // Protect Ledger Tab navigation from state leaks
+  useEffect(() => {
+    if (session && !isAdmin && activeTab === 'ledger') {
+      setActiveTab('home');
+    }
+  }, [isAdmin, activeTab, session]);
 
   // --- PWA ---
   useEffect(() => {
@@ -393,8 +423,8 @@ export default function App() {
         setCurrentSelectedProduct('');
         setCurrentSelectedQuantity('');
         setNewTxDate(new Date().toISOString().split('T'));
-        // Switch to ledger view automatically after logging to confirm submission visually
-        setActiveTab('ledger');
+        // Switch view appropriately based on roles to show live records
+        setActiveTab(isAdmin ? 'ledger' : 'home');
       }
     } catch (error: any) { console.error("Error:", error.message); }
   };
@@ -544,39 +574,29 @@ export default function App() {
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" 
                 alt="Brand Logo 1" 
-                className="w-14 h-14 object-contain"
+                className="w-14 h-14 object-contain drop-shadow-sm"
               />
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182503.png?raw=true" 
                 alt="Brand Logo 2" 
-                className="w-14 h-14 object-contain"
+                className="w-14 h-14 object-contain drop-shadow-sm"
               />
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight text-[#2C211A] text-center leading-snug">SAFA</h1>
             <h2 className="text-sm font-medium tracking-widest uppercase text-amber-900/60 mt-1">Dealer of Taste</h2>
             
             <p className="text-center text-xs text-amber-900/50 mt-4">
-              {authMode === 'login' ? 'Supervisor Access Portal' : 'Register Supervisor Account'}
+              {authMode === 'login' ? 'Authorized Access Portal' : 'Register Operator Account'}
             </p>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-3">
-            {authMode === 'signup' && (
-              <input
-                type="text"
-                placeholder="Full Name"
-                required
-                value={authName}
-                onChange={(e) => setAuthName(e.target.value)}
-                className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3.5 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-all placeholder-amber-900/40"
-              />
-            )}
             <input
-              type="email"
-              placeholder="Email Address"
+              type="text"
+              placeholder="Your Name"
               required
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
+              value={authName}
+              onChange={(e) => setAuthName(e.target.value)}
               className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3.5 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-all placeholder-amber-900/40"
             />
             <input
@@ -704,7 +724,9 @@ export default function App() {
             {/* Profile / Logout */}
             <div className="flex items-center gap-3 pl-3 md:pl-5 border-l border-[#EBE3D5]">
               <div className="hidden md:flex flex-col items-end">
-                <span className="text-[10px] font-bold text-[#5C4033] uppercase">Supervisor</span>
+                <span className="text-[10px] font-bold text-[#5C4033] uppercase">
+                  {isAdmin ? 'Admin Supervisor' : 'Staff Operator'}
+                </span>
                 <span className="text-xs font-medium text-amber-900/60 truncate max-w-[120px]">
                   {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')}
                 </span>
@@ -737,7 +759,9 @@ export default function App() {
             <img src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" alt="Logo" className="w-8 h-8 object-contain" />
             <div>
               <span className="block text-sm font-extrabold text-[#2C211A] leading-tight">SAFA Vault</span>
-              <span className="block text-[9px] uppercase tracking-wider text-[#5C4033] font-semibold">HQ Dashboard</span>
+              <span className="block text-[9px] uppercase tracking-wider text-[#5C4033] font-semibold">
+                {isAdmin ? 'HQ Dashboard' : 'Operator Mode'}
+              </span>
             </div>
           </div>
           <button 
@@ -773,13 +797,16 @@ export default function App() {
             Rates & Staff
           </button>
           
-          <button
-            onClick={() => { setActiveTab('ledger'); setIsMenuOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${activeTab === 'ledger' ? 'bg-[#5C4033] text-white shadow-md' : 'text-[#2C211A] hover:bg-[#FAF5EE]'}`}
-          >
-            <svg className="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-            Ledger Summary
-          </button>
+          {/* RBAC: Only Admin can see the Ledger Summary route */}
+          {isAdmin && (
+            <button
+              onClick={() => { setActiveTab('ledger'); setIsMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${activeTab === 'ledger' ? 'bg-[#5C4033] text-white shadow-md' : 'text-[#2C211A] hover:bg-[#FAF5EE]'}`}
+            >
+              <svg className="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Ledger Summary
+            </button>
+          )}
         </div>
 
         <div className="p-6 border-t border-[#EBE3D5] bg-[#FAF5EE]/30">
@@ -1144,8 +1171,8 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW: LEDGER SUMMARY */}
-        {activeTab === 'ledger' && (
+        {/* VIEW: LEDGER SUMMARY (ADMIN ONLY) */}
+        {activeTab === 'ledger' && isAdmin && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* PRIMARY CONTROLS PANEL (FILTER BAR WITH DYNAMIC DATES) */}
             <div className="bg-white/80 backdrop-blur-xl rounded-[32px] border border-[#EBE3D5] p-6 shadow-sm mb-8 space-y-5">
