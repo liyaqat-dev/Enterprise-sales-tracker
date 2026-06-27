@@ -63,6 +63,8 @@ export default function App() {
   // --- UI LAYOUT STATES ---
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'config' | 'ledger'>('home');
+  // ADDED: Declarations for the Excel Export Modal State to fix the crash
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // --- DATA STATES ---
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -325,7 +327,6 @@ export default function App() {
       const { data, error } = await client.from('staff').insert([{ name: newStaffName.trim() }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Use flat row unpacked list data instead of data array to resolve white-screen rendering crash
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -353,7 +354,6 @@ export default function App() {
       const { data, error } = await client.from('products').insert([{ name: newProductName.trim(), rate: rateVal }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Use flat row unpacked list data instead of data array to resolve white-screen rendering crash
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -370,7 +370,6 @@ export default function App() {
       const { data, error } = await client.from('products').update({ rate: parsed }).eq('id', id).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Use flat row unpacked list data instead of data array to resolve white-screen rendering crash
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -451,7 +450,6 @@ export default function App() {
         setNewTxItems([]);
         setCurrentSelectedProduct('');
         setCurrentSelectedQuantity('');
-        // Fixed: Use correct flat string parsing layout to prevent array input warnings
         setNewTxDate(new Date().toISOString().split('T'));
         // Switch view appropriately based on roles to show live records
         setActiveTab(isAdmin ? 'ledger' : 'home');
@@ -609,7 +607,7 @@ export default function App() {
               <img 
                 src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182503.png?raw=true" 
                 alt="Brand Logo 2" 
-                className="w-14 h-14 object-contain drop-shadow-sm"
+                className="w-14 h-14 object-contain"
               />
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight text-[#2C211A] text-center leading-snug">SAFA</h1>
@@ -631,7 +629,7 @@ export default function App() {
             />
             <input
               type="password"
-              placeholder="Enter you password"
+              placeholder="Password (786786 for Admin)"
               required
               value={authPassword}
               onChange={(e) => setAuthPassword(e.target.value)}
@@ -863,7 +861,7 @@ export default function App() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 md:p-8 border border-[#EBE3D5] shadow-sm flex flex-col justify-between hover:translate-y-[-2px] transition-transform duration-300">
                 <div className="flex justify-between items-start">
-                  <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Total Disbursed Amount</span>
+                  <span className="text-xs font-semibold tracking-wide text-amber-900/60 uppercase">Total Disbursement Amount</span>
                   <div className="p-2.5 bg-[#FAF5EE] rounded-xl border border-[#F3ECE0]">
                     <svg className="w-5 h-5 text-[#8B6E53]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   </div>
@@ -1129,7 +1127,7 @@ export default function App() {
                       placeholder="SKU Name"
                       value={newProductName}
                       onChange={(e) => setNewProductName(e.target.value)}
-                      className="flex- bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none"
+                      className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none"
                     />
                     <input
                       type="number"
@@ -1138,7 +1136,7 @@ export default function App() {
                       placeholder="₹ Rate"
                       value={newProductRate}
                       onChange={(e) => setNewProductRate(e.target.value)}
-                      className="flex-1 bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none"
+                      className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none"
                     />
                   </div>
                   <button
@@ -1386,7 +1384,7 @@ export default function App() {
       {/* --- EXPORT OPTIONS MODAL --- */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-          <div onClick={() => setIsExportModalOpen(false)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-md transition-opacity" />
+          <div onClick={() => setIsExportModalOpen(false)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" />
           <div className="relative bg-white/95 backdrop-blur-2xl rounded-[32px] w-full max-w-md overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300 animate-in zoom-in-95">
             <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-gradient-to-r from-[#107C41]/10 to-transparent">
               <div className="flex items-center gap-3">
@@ -1410,7 +1408,7 @@ export default function App() {
                 </div>
                 <div>
                   <span className="block text-sm font-extrabold text-[#2C211A] group-hover:text-[#107C41] tracking-tight">Minimal Summary</span>
-                  <span className="block text-[11px] font-medium text-amber-900/60 mt-1 leading-relaxed">Aggregated overall sum output assigned perfectly per operational staff member.</span>
+                  <span className="block text-[11px] font-medium text-amber-900/60 mt-1 leading-relaxed">Summary of overall totals per staff member.</span>
                 </div>
               </button>
 
