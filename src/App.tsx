@@ -29,6 +29,7 @@ interface DisbursementItem {
 }
 
 // --- CLIENT LAZY LOADER FOR LIVE PREVIEW SUPPORT ---
+// Secure dynamic configuration values
 const supabaseUrl = 'https://aormlfkegnheawtqrtvx.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvcm1sZmtlZ25oZWF3dHFydHZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEwMDYsImV4cCI6MjA5NTM3NzAwNn0.pf4YCh2E4g5L_K6bM1WZZ5byiAWEp_2LzUbMke9OqNM';
 
@@ -55,11 +56,11 @@ export default function App() {
 
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
-  // New Transaction Form State
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
   const [currentSelectedProduct, setCurrentSelectedProduct] = useState<string>('');
@@ -211,7 +212,6 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Safe flat state update using data to prevent rendering crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -250,7 +250,6 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Safe flat state update using data to prevent rendering crashes
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -276,7 +275,6 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Safe flat state update using data to prevent rendering crashes
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -357,7 +355,6 @@ export default function App() {
 
       if (error) throw error;
       if (data && data.length > 0) {
-        // Dynamic real-time prepend flat response items to list
         setTransactions(prev => [...data, ...prev]);
         setNewTxStaff('');
         setNewTxItems([]);
@@ -386,21 +383,13 @@ export default function App() {
   // --- ADVANCED DATE FILTER RESOLVER ---
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      // 1. Staff Filter
       const matchStaff = filterStaff === 'All' || t.staff_id === filterStaff;
-      
-      // 2. Product Filter
       const matchProduct = filterProduct === 'All' || t.product_id === filterProduct;
-
       if (!matchStaff || !matchProduct) return false;
 
-      // 3. Date Range Filter
       if (datePreset === 'All') return true;
 
-      // Fallback timestamp parse (Postgres created_at timestamp preferred, local formatted string as fallback)
       const txDate = t.created_at ? new Date(t.created_at) : new Date();
-
-      // Normalize today to start-of-day/end-of-day for perfect calculations
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
@@ -408,7 +397,6 @@ export default function App() {
       if (datePreset === 'Today') {
         return txDate >= startOfToday && txDate <= endOfToday;
       }
-
       if (datePreset === 'Yesterday') {
         const startOfYesterday = new Date(startOfToday);
         startOfYesterday.setDate(startOfYesterday.getDate() - 1);
@@ -416,16 +404,13 @@ export default function App() {
         endOfYesterday.setDate(endOfYesterday.getDate() - 1);
         return txDate >= startOfYesterday && txDate <= endOfYesterday;
       }
-
       if (datePreset === 'Month') {
         const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         return txDate >= startOfThisMonth && txDate <= endOfToday;
       }
-
       if (datePreset === 'Custom') {
         let isAfterStart = true;
         let isBeforeEnd = true;
-
         if (startDate) {
           const customStart = new Date(startDate);
           customStart.setHours(0, 0, 0, 0);
@@ -438,7 +423,6 @@ export default function App() {
         }
         return isAfterStart && isBeforeEnd;
       }
-
       return true;
     });
   }, [transactions, filterStaff, filterProduct, datePreset, startDate, endDate]);
@@ -451,26 +435,79 @@ export default function App() {
     return filteredTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
   }, [filteredTransactions]);
 
-  // --- EXPORT TO EXCEL (XLSX using DOM table element) ---
-  const handleExportToExcel = () => {
+  // --- SHEETJS EXPORT FUNCTIONALITY ---
+  const generateExcelReport = (type: 'minimal' | 'detailed') => {
     // @ts-ignore
     if (!window.XLSX) {
-      alert("SheetJS utility is still loading. Please try again in a second.");
+      alert("SheetJS utility is still loading. Please try again in a moment.");
       return;
     }
-    const tableElement = document.getElementById('disbursement-ledger-table');
-    if (!tableElement) return;
 
-    // Use SheetJS to convert DOM table element directly into an Excel workbook
+    let aoa: any[][] = [];
+
+    if (type === 'minimal') {
+      // Create Minimal Report AOA (Array of Arrays)
+      aoa.push(['Timestamp / Date', 'Staff Member Name', 'Product Disbursed', 'Fixed Rate (Rs)', 'Quantity (Nos)', 'Total Price Formula', 'Total Amount (Rs)']);
+      
+      filteredTransactions.forEach(tx => {
+        const staffName = staffList.find(s => s.id === tx.staff_id)?.name || 'Deleted Staff';
+        const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
+        const formula = `${tx.rate} x ${tx.quantity}`;
+        aoa.push([tx.timestamp, staffName, prodName, tx.rate, tx.quantity, formula, tx.total]);
+      });
+    } else if (type === 'detailed') {
+      // Create Detailed Report AOA (Array of Arrays) mimicking the provided visual style
+      aoa.push(['Timestamp / Date', 'Staff Member', 'Product Disbursed', 'Total Price Formula']);
+      
+      // Group transactions by Staff Name
+      const groupedTx: { [key: string]: typeof filteredTransactions } = {};
+      
+      filteredTransactions.forEach(tx => {
+        const staffName = staffList.find(s => s.id === tx.staff_id)?.name || 'Deleted Staff';
+        if (!groupedTx[staffName]) groupedTx[staffName] = [];
+        groupedTx[staffName].push(tx);
+      });
+
+      // Map grouped data with subtotal rows
+      Object.keys(groupedTx).forEach(staffName => {
+        let staffTotal = 0;
+        groupedTx[staffName].forEach((tx, index) => {
+          const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
+          const formula = `${tx.rate} \u00D7 ${tx.quantity} \u20B9${tx.total}`;
+          staffTotal += Number(tx.total);
+
+          aoa.push([
+            tx.timestamp,
+            index === 0 ? staffName : '', // Show staff name only on the first row of their group
+            prodName,
+            formula
+          ]);
+        });
+        
+        // Append Subtotal Row for the staff member
+        aoa.push(['', '', '', staffTotal.toFixed(2)]);
+        // Append Empty spacer row
+        aoa.push([]);
+      });
+    }
+
+    // Convert AOA to Sheet and generate file
     // @ts-ignore
-    const workbook = window.XLSX.utils.table_to_book(tableElement, { raw: true });
-    
+    const worksheet = window.XLSX.utils.aoa_to_sheet(aoa);
+    // @ts-ignore
+    const workbook = window.XLSX.utils.book_new();
+    // @ts-ignore
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Ledger");
+
     const dateStr = new Date().toISOString().split('T');
+    const fileName = `Enterprise_${type === 'detailed' ? 'Detailed' : 'Minimal'}_Ledger_${dateStr}.xlsx`;
+    
     // @ts-ignore
-    window.XLSX.writeFile(workbook, `Enterprise_Filtered_Ledger_Export_${dateStr}.xlsx`);
+    window.XLSX.writeFile(workbook, fileName);
+    setIsExportModalOpen(false);
   };
 
-  // Loading Screen
+
   if (!isLibLoaded || !isXlsxLoaded || isLoading) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center">
@@ -666,7 +703,7 @@ export default function App() {
 
               {/* Export to Excel Button (SheetJS Integrated - Premium Green) */}
               <button
-                onClick={handleExportToExcel}
+                onClick={() => setIsExportModalOpen(true)}
                 disabled={filteredTransactions.length === 0}
                 className="px-4 py-2 bg-[#107C41] text-xs text-white hover:bg-[#0E6C38] rounded-full font-bold flex items-center gap-2 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95"
                 title="Download Filtered Ledger as Excel Workbook (.xlsx)"
@@ -903,6 +940,86 @@ export default function App() {
         </div>
       </footer>
 
+
+      {/* EXPORT OPTIONS MODAL */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
+          
+          <div 
+            onClick={() => setIsExportModalOpen(false)}
+            className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" 
+          />
+
+          <div className="relative bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-sm overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300">
+            
+            <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-[#FDFBF7]">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-[#107C41] rounded-xl text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#2C211A] text-base">Export to Excel</h3>
+                  <p className="text-xs text-amber-900/50">Select your preferred sheet layout</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-1.5 hover:bg-[#FAF5EE] rounded-full text-amber-900/40 hover:text-[#5C4033] transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              
+              <button
+                onClick={() => generateExcelReport('minimal')}
+                className="w-full text-left p-4 rounded-2xl border border-[#EBE3D5] hover:border-[#107C41] hover:bg-emerald-50 transition-all group flex items-start gap-3"
+              >
+                <div className="p-2 bg-white rounded-lg border border-[#EBE3D5] group-hover:border-emerald-200">
+                  <svg className="w-5 h-5 text-gray-500 group-hover:text-[#107C41]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                </div>
+                <div>
+                  <span className="block text-sm font-bold text-[#2C211A] group-hover:text-[#107C41]">Minimal Report</span>
+                  <span className="block text-xs text-amber-900/60 mt-0.5">Standard flat table exactly as shown on dashboard.</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => generateExcelReport('detailed')}
+                className="w-full text-left p-4 rounded-2xl border border-[#EBE3D5] hover:border-[#107C41] hover:bg-emerald-50 transition-all group flex items-start gap-3"
+              >
+                <div className="p-2 bg-white rounded-lg border border-[#EBE3D5] group-hover:border-emerald-200">
+                  <svg className="w-5 h-5 text-gray-500 group-hover:text-[#107C41]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </div>
+                <div>
+                  <span className="block text-sm font-bold text-[#2C211A] group-hover:text-[#107C41]">Detailed Report</span>
+                  <span className="block text-xs text-amber-900/60 mt-0.5">Visually grouped by staff with embedded sub-totals.</span>
+                </div>
+              </button>
+
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="w-full py-3 rounded-xl border border-[#D5C9B7] text-[#5C4033] font-medium text-sm hover:bg-[#FAF8F5] transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* MODAL: LOG DISBURSEMENT (MULTI-PRODUCT SUPPORTED) */}
       {isLogModalOpen && (
@@ -1280,7 +1397,7 @@ export default function App() {
                                 className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
                                 title="Remove Product"
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                               </button>
