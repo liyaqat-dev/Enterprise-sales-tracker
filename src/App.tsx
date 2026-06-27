@@ -631,7 +631,7 @@ export default function App() {
             />
             <input
               type="password"
-              placeholder="Password (786786 for Admin)"
+              placeholder="Enter you password"
               required
               value={authPassword}
               onChange={(e) => setAuthPassword(e.target.value)}
