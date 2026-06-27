@@ -446,14 +446,21 @@ export default function App() {
     let aoa: any[][] = [];
 
     if (type === 'minimal') {
-      // Create Minimal Report AOA (Array of Arrays)
-      aoa.push(['Timestamp / Date', 'Staff Member Name', 'Product Disbursed', 'Fixed Rate (Rs)', 'Quantity (Nos)', 'Total Price Formula', 'Total Amount (Rs)']);
+      // Create Minimal Report AOA (Array of Arrays) showing overall totals per staff
+      aoa.push(['Timestamp / Date', 'Staff Member', 'Overall Total (Rs)']);
+      
+      const staffTotals: { [key: string]: number } = {};
       
       filteredTransactions.forEach(tx => {
         const staffName = staffList.find(s => s.id === tx.staff_id)?.name || 'Deleted Staff';
-        const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
-        const formula = `${tx.rate} x ${tx.quantity}`;
-        aoa.push([tx.timestamp, staffName, prodName, tx.rate, tx.quantity, formula, tx.total]);
+        if (!staffTotals[staffName]) staffTotals[staffName] = 0;
+        staffTotals[staffName] += Number(tx.total);
+      });
+
+      const reportDate = new Date().toLocaleDateString();
+
+      Object.keys(staffTotals).forEach(staffName => {
+        aoa.push([reportDate, staffName, staffTotals[staffName].toFixed(2)]);
       });
     } else if (type === 'detailed') {
       // Create Detailed Report AOA (Array of Arrays) mimicking the provided visual style
@@ -987,7 +994,7 @@ export default function App() {
                 </div>
                 <div>
                   <span className="block text-sm font-bold text-[#2C211A] group-hover:text-[#107C41]">Minimal Report</span>
-                  <span className="block text-xs text-amber-900/60 mt-0.5">Standard flat table exactly as shown on dashboard.</span>
+                  <span className="block text-xs text-amber-900/60 mt-0.5">Summary of overall totals per staff member.</span>
                 </div>
               </button>
 
