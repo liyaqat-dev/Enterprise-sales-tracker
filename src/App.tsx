@@ -65,7 +65,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'config' | 'ledger'>('home');
   // Declared variables to fix all reference crash issues
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
-  const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
 
   // --- DATA STATES ---
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -328,7 +327,7 @@ export default function App() {
       const { data, error } = await client.from('staff').insert([{ name: newStaffName.trim() }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
+        // Unpack flat row object (data) instead of storing the data array directly
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -356,7 +355,7 @@ export default function App() {
       const { data, error } = await client.from('products').insert([{ name: newProductName.trim(), rate: rateVal }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
+        // Unpack flat row object (data) instead of storing the data array directly
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -373,7 +372,7 @@ export default function App() {
       const { data, error } = await client.from('products').update({ rate: parsed }).eq('id', id).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Fixed: Correctly unpack flat row object (data) instead of array to prevent crashes
+        // Unpack flat row object (data) instead of storing the data array directly
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
@@ -1385,10 +1384,38 @@ export default function App() {
 
       </main>
 
+      <footer className="max-w-7xl mx-auto px-6 py-12 mt-12 border-t border-[#EBE3D5]">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-amber-900/50">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <img 
+                src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" 
+                alt="Logo Small Left" 
+                className="w-10 h-10 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+              <img 
+                src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182503.png?raw=true" 
+                alt="Logo Small Right" 
+                className="w-10 h-10 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
+            <span>&copy; 2026 Enterprise Sales-Tracker Systems. All rights reserved.</span>
+          </div>
+          <div className="flex gap-4">
+            <span className="hover:text-[#5C4033] cursor-pointer">Supervisor Vault Controls</span>
+            <span>&bull;</span>
+            <span className="hover:text-[#5C4033] cursor-pointer">Data Policy</span>
+          </div>
+        </div>
+      </footer>
+
+
       {/* --- EXPORT OPTIONS MODAL --- */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-          <div onClick={() => setIsExportModalOpen(false)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" />
+          <div onClick={() => setIsExportModalOpen(false)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-md transition-opacity" />
           <div className="relative bg-white/95 backdrop-blur-2xl rounded-[32px] w-full max-w-md overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300 animate-in zoom-in-95">
             <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-gradient-to-r from-[#107C41]/10 to-transparent">
               <div className="flex items-center gap-3">
@@ -1426,431 +1453,6 @@ export default function App() {
                 </div>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: LOG DISBURSEMENT (MULTI-PRODUCT SUPPORTED) */}
-      {isLogModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-          
-          <div 
-            onClick={() => setIsLogModalOpen(false)}
-            className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" 
-          />
-
-          <div className="relative bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-lg overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300">
-            
-            <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-[#FDFBF7]">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-[#5C4033] rounded-xl text-white">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="font-bold text-[#2C211A] text-base">New Disbursement Form</h3>
-                  <p className="text-xs text-amber-900/50">Admin Quick-Action Multi-Product Log</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsLogModalOpen(false)}
-                className="p-1.5 hover:bg-[#FAF5EE] rounded-full text-amber-900/40 hover:text-[#5C4033] transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5">
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Manual Date Select */}
-                <div>
-                  <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
-                    1. Date
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={newTxDate}
-                    onChange={(e) => setNewTxDate(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
-                  />
-                </div>
-                
-                {/* Staff Select */}
-                <div>
-                  <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
-                    2. Staff Member
-                  </label>
-                  <select
-                    required
-                    value={newTxStaff}
-                    onChange={(e) => setNewTxStaff(e.target.value)}
-                    className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
-                  >
-                    <option value="" disabled>-- Select Authorized Staff --</option>
-                    {staffList.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Add Product Line Section */}
-              <div className="border border-[#EBE3D5] rounded-2xl p-4 bg-[#FDFBF7] space-y-3">
-                <h4 className="text-xs font-bold text-[#5C4033] uppercase tracking-wide">
-                  3. Add Disbursement Items
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-amber-900/60 uppercase mb-1">Select Product</label>
-                    <select
-                      value={currentSelectedProduct}
-                      onChange={(e) => setCurrentSelectedProduct(e.target.value)}
-                      className="w-full bg-white border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none cursor-pointer"
-                    >
-                      <option value="" disabled>-- Choose Item --</option>
-                      {productList.map(p => (
-                        <option key={p.id} value={p.id}>{p.name} (₹{p.rate})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-amber-900/60 uppercase mb-1">Quantity</label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Qty"
-                      value={currentSelectedQuantity}
-                      onChange={(e) => setCurrentSelectedQuantity(e.target.value)}
-                      className="w-full bg-white border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddItemToTxList}
-                  disabled={!currentSelectedProduct || !currentSelectedQuantity}
-                  className="w-full py-2 bg-[#FAF5EE] text-xs font-semibold text-[#5C4033] rounded-xl border border-[#D5C9B7] hover:bg-[#F3EFE7] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add Item to Disbursement List
-                </button>
-              </div>
-
-              {/* Disbursement Cart Items */}
-              {newTxItems.length > 0 && (
-                <div className="space-y-2">
-                  <span className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide">
-                    Disbursement Summary List
-                  </span>
-                  <div className="max-h-40 overflow-y-auto border border-[#EBE3D5] rounded-2xl divide-y divide-[#F3ECE0] bg-white">
-                    {newTxItems.map((item) => {
-                      const prod = productList.find(p => p.id === item.product_id);
-                      if (!prod) return null;
-                      return (
-                        <div key={item.product_id} className="flex items-center justify-between p-3 text-xs">
-                          <div>
-                            <span className="font-bold text-[#2C211A]">{prod.name}</span>
-                            <span className="text-amber-900/60 ml-2">({item.quantity} nos × ₹{prod.rate})</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-semibold text-[#5C4033]">₹{item.quantity * prod.rate}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemFromTxList(item.product_id)}
-                              className="text-rose-500 hover:text-rose-700 p-0.5"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* CALCULATED PREVIEW CARD */}
-              <div className="bg-[#FAF5EE] rounded-2xl p-4 border border-[#EBE3D5] flex flex-col justify-between">
-                <span className="text-[10px] font-bold text-amber-900/50 uppercase tracking-wide">
-                  Live Engine Calculation
-                </span>
-                <div className="flex justify-between items-end mt-2">
-                  <div>
-                    <span className="text-xs text-amber-900/60 block">Logged Items:</span>
-                    <span className="text-sm font-semibold text-[#5C4033]">
-                      {newTxItems.length} Products configured
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase text-amber-900/50 block">Disbursement Grand Total</span>
-                    <span className="text-2xl font-extrabold text-[#2C211A] tracking-tight">
-                      ₹ {modalGrandTotal.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsLogModalOpen(false)}
-                  className="w-1/2 py-3 rounded-xl border border-[#D5C9B7] text-[#5C4033] font-medium text-sm hover:bg-[#FAF8F5] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogDisbursement}
-                  disabled={!newTxStaff || newTxItems.length === 0 || !newTxDate}
-                  className="w-1/2 py-3 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Confirm Log
-                </button>
-              </div>
-
-            </div>
-
-          </div>
-        </div>
-      )}
-
-
-      {/* MODAL: RATES & STAFF CONFIGURATION */}
-      {isConfigModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-          
-          <div 
-            onClick={() => setIsConfigModalOpen(false)}
-            className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-sm transition-opacity" 
-          />
-
-          <div className="relative bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-4xl overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300">
-            
-            <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-[#FDFBF7]">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-[#5C4033] rounded-xl text-white">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="font-bold text-[#2C211A] text-base">Master Configuration Console</h3>
-                  <p className="text-xs text-amber-900/50">Manage dynamic catalog rates and authorized staff lists</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsConfigModalOpen(false)}
-                className="p-1.5 hover:bg-[#FAF5EE] rounded-full text-amber-900/40 hover:text-[#5C4033] transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#EBE3D5] max-h-[70vh] overflow-y-auto">
-              
-              {/* LEFT: STAFF */}
-              <div className="p-6 space-y-6">
-                <div>
-                  <h4 className="font-bold text-sm text-[#2C211A]">Staff Management</h4>
-                  <p className="text-xs text-amber-900/50">Add or revoke supervisor authorizations</p>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Enter Staff Name (e.g. Staff E)"
-                    value={newStaffName}
-                    onChange={(e) => setNewStaffName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (newStaffName.trim()) handleAddStaff(e as any);
-                      }
-                    }}
-                    className="flex-1 bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      if (newStaffName.trim()) handleAddStaff(e as any);
-                    }}
-                    className="px-4 py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm active:scale-95"
-                  >
-                    Add Staff
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {staffList.map((staff) => (
-                    <div 
-                      key={staff.id} 
-                      className="flex items-center justify-between p-3 bg-[#FAF9F6] rounded-xl border border-[#EBE3D5] hover:bg-white transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#EEDFCC] flex items-center justify-center text-[10px] font-bold text-[#5C4033]">
-                          {staff.name.charAt(0)}
-                        </div>
-                        <span className="text-xs font-semibold text-[#2C211A]">{staff.name}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveStaff(staff.id)}
-                        className="p-1 text-amber-900/40 hover:text-rose-600 transition-colors"
-                        title="Remove Staff"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                  {staffList.length === 0 && (
-                    <p className="text-xs text-amber-900/40 text-center py-6 italic">No staff configured</p>
-                  )}
-                </div>
-
-              </div>
-
-              {/* RIGHT: PRODUCTS */}
-              <div className="p-6 space-y-6">
-                <div>
-                  <h4 className="font-bold text-sm text-[#2C211A]">Product Rate Engine Configurator</h4>
-                  <p className="text-xs text-amber-900/50">Edit current product values and prices centrally</p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="Product SKU Name"
-                      value={newProductName}
-                      onChange={(e) => setNewProductName(e.target.value)}
-                      className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
-                    />
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Rate (₹)"
-                      value={newProductRate}
-                      onChange={(e) => setNewProductRate(e.target.value)}
-                      className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-3 py-2 text-xs text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      if (newProductName.trim() && newProductRate) handleAddProduct(e as any);
-                    }}
-                    className="w-full py-2 bg-[#5C4033] hover:bg-[#4E3629] text-white text-xs font-semibold rounded-xl transition-all shadow-sm active:scale-95"
-                  >
-                    Add Product & Assign Rate
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {productList.map((product) => (
-                    <div 
-                      key={product.id} 
-                      className="p-3 bg-[#FAF9F6] rounded-xl border border-[#EBE3D5] hover:bg-white transition-colors space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#8B6E53]"></span>
-                          <span className="text-xs font-bold text-[#2C211A]">{product.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {editingProductId === product.id ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                step="0.01"
-                                className="w-16 bg-white border border-[#D5C9B7] rounded-lg px-2 py-1 text-xs text-right font-semibold"
-                                value={editingRateValue}
-                                onChange={(e) => setEditingRateValue(e.target.value)}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateProductRate(product.id, editingRateValue)}
-                                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                                title="Save Rate"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingProductId(null)}
-                                className="p-1 text-amber-900/40 hover:bg-gray-100 rounded"
-                                title="Cancel"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-[#5C4033] bg-[#EEDFCC]/45 px-2.5 py-0.5 rounded-lg">
-                                ₹ {product.rate.toFixed(2)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingProductId(product.id);
-                                  setEditingRateValue(product.rate.toString());
-                                }}
-                                className="p-1 text-amber-900/40 hover:text-[#5C4033] transition-colors"
-                                title="Edit Rate"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveProduct(product.id)}
-                                className="p-1 text-amber-900/40 hover:text-[#5C4033] transition-colors"
-                                title="Remove Product"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {productList.length === 0 && (
-                    <p className="text-xs text-amber-900/40 text-center py-6 italic">No products configured</p>
-                  )}
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="p-6 border-t border-[#EBE3D5] flex justify-end bg-[#FAF5EE]/30">
-              <button
-                type="button"
-                onClick={() => setIsConfigModalOpen(false)}
-                className="px-6 py-2.5 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-semibold text-xs transition-colors shadow-sm"
-              >
-                Close Configuration
-              </button>
-            </div>
-
           </div>
         </div>
       )}
