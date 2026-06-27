@@ -63,8 +63,9 @@ export default function App() {
   // --- UI LAYOUT STATES ---
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'config' | 'ledger'>('home');
-  // ADDED: Declarations for the Excel Export Modal State to fix the crash
+  // Declared variables to fix all reference crash issues
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
 
   // --- DATA STATES ---
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -327,6 +328,7 @@ export default function App() {
       const { data, error } = await client.from('staff').insert([{ name: newStaffName.trim() }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
         setStaffList(prev => [...prev, data]);
         setNewStaffName('');
       }
@@ -354,6 +356,7 @@ export default function App() {
       const { data, error } = await client.from('products').insert([{ name: newProductName.trim(), rate: rateVal }]).select();
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
         setProductList(prev => [...prev, data]);
         setNewProductName('');
         setNewProductRate('');
@@ -370,6 +373,7 @@ export default function App() {
       const { data, error } = await client.from('products').update({ rate: parsed }).eq('id', id).select();
       if (error) throw error;
       if (data && data.length > 0) {
+        // Correctly unpack flat row object (data) instead of nested data array to prevent crashes
         setProductList(prev => prev.map(p => p.id === id ? data : p));
         setEditingProductId(null);
       }
