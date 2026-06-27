@@ -61,6 +61,8 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
+  // New Transaction Form State
+  const [newTxDate, setNewTxDate] = useState<string>(() => new Date().toISOString().split('T'));
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
   const [currentSelectedProduct, setCurrentSelectedProduct] = useState<string>('');
@@ -328,12 +330,21 @@ export default function App() {
 
   const handleLogDisbursement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTxStaff || newTxItems.length === 0) return;
+    if (!newTxStaff || newTxItems.length === 0 || !newTxDate) return;
 
     const client = getSupabaseClient();
     if (!client) return;
 
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString();
+    // Parse manual date and construct a solid ISO / Display Timestamp
+    const [year, month, day] = newTxDate.split('-');
+    const txDateObj = new Date(Number(year), Number(month) - 1, Number(day));
+    
+    // Preserve current time of day for the timestamp
+    const now = new Date();
+    txDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+
+    const timestampStr = `${txDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${txDateObj.toLocaleDateString()}`;
+    const createdAtIso = txDateObj.toISOString();
 
     const inserts = newTxItems.map(item => {
       const prod = productList.find(p => p.id === item.product_id)!;
@@ -343,7 +354,8 @@ export default function App() {
         quantity: item.quantity,
         rate: prod.rate,
         total: item.quantity * prod.rate,
-        timestamp: timestamp
+        timestamp: timestampStr,
+        created_at: createdAtIso
       };
     });
 
@@ -360,7 +372,9 @@ export default function App() {
         setNewTxItems([]);
         setCurrentSelectedProduct('');
         setCurrentSelectedQuantity('');
+        setNewTxDate(new Date().toISOString().split('T')); // Reset date to today
         setIsLogModalOpen(false);
+        fetchEnterpriseData(false);
       }
     } catch (error: any) {
       console.error("Error logging disbursements to Supabase:", error.message);
@@ -375,6 +389,7 @@ export default function App() {
       const { error } = await client.from('transactions').delete().eq('id', txId);
       if (error) throw error;
       setTransactions(prev => prev.filter(t => t.id !== txId));
+      fetchEnterpriseData(false);
     } catch (error: any) {
       console.error("Error deleting transaction from Supabase:", error.message);
     }
@@ -447,7 +462,7 @@ export default function App() {
 
     if (type === 'minimal') {
       // Create Minimal Report AOA (Array of Arrays) showing overall totals per staff
-      aoa.push(['Date', 'Staff Member', 'Overall Total (Rs)']);
+      aoa.push(['Timestamp / Date', 'Staff Member', 'Overall Total (Rs)']);
       
       const staffTotals: { [key: string]: number } = {};
       
@@ -590,6 +605,7 @@ export default function App() {
             
             <button
               onClick={() => {
+                setNewTxDate(new Date().toISOString().split('T')); // Default to today
                 setNewTxItems([]);
                 setIsLogModalOpen(true);
               }}
@@ -1063,28 +1079,44 @@ export default function App() {
 
             <div className="p-6 space-y-5">
               
-              {/* Staff Select */}
-              <div>
-                <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
-                  1. Select Staff Member
-                </label>
-                <select
-                  required
-                  value={newTxStaff}
-                  onChange={(e) => setNewTxStaff(e.target.value)}
-                  className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
-                >
-                  <option value="" disabled>-- Select Authorized Staff --</option>
-                  {staffList.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Manual Date Select */}
+                <div>
+                  <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
+                    1. Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newTxDate}
+                    onChange={(e) => setNewTxDate(e.target.value)}
+                    className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
+                  />
+                </div>
+                
+                {/* Staff Select */}
+                <div>
+                  <label className="block text-xs font-bold text-[#5C4033] uppercase tracking-wide mb-1.5">
+                    2. Staff Member
+                  </label>
+                  <select
+                    required
+                    value={newTxStaff}
+                    onChange={(e) => setNewTxStaff(e.target.value)}
+                    className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none focus:bg-white transition-all cursor-pointer"
+                  >
+                    <option value="" disabled>-- Select Authorized Staff --</option>
+                    {staffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Add Product Line Section */}
               <div className="border border-[#EBE3D5] rounded-2xl p-4 bg-[#FDFBF7] space-y-3">
                 <h4 className="text-xs font-bold text-[#5C4033] uppercase tracking-wide">
-                  2. Add Disbursement Items
+                  3. Add Disbursement Items
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -1189,7 +1221,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleLogDisbursement}
-                  disabled={!newTxStaff || newTxItems.length === 0}
+                  disabled={!newTxStaff || newTxItems.length === 0 || !newTxDate}
                   className="w-1/2 py-3 rounded-xl bg-[#5C4033] hover:bg-[#4E3629] text-white font-medium text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Confirm Log
