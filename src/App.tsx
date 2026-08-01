@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+Import React, { useState, useMemo, useEffect } from 'react';
 
 // --- TYPE DEFINITIONS ---
 interface Staff {
@@ -43,32 +43,7 @@ function getSupabaseClient() {
   }
   return supabaseClientInstance;
 }
-// --- PAGINATION HELPER ---
-const BATCH_SIZE = 1000;
 
-async function fetchAllTransactions(from = 0, accumulatedData: Transaction[] = []): Promise<Transaction[]> {
-  const client = getSupabaseClient();
-  if (!client) return accumulatedData;
-
-  const to = from + BATCH_SIZE - 1; 
-  const { data, error } = await client
-    .from('transactions')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .range(from, to); 
-
-  if (error) {
-    console.error("Error fetching data:", error);
-    return accumulatedData; 
-  }
-
-  const newData = [...accumulatedData, ...(data as Transaction[])];
-
-  if (data.length === BATCH_SIZE) {
-    return fetchAllTransactions(from + BATCH_SIZE, newData);
-  }
-  return newData;
-}
 export default function App() {
   // --- AUTH & SYSTEM STATES ---
   const [isLibLoaded, setIsLibLoaded] = useState<boolean>(false);
@@ -278,24 +253,11 @@ export default function App() {
 
     if (showLoader) setIsLoading(true);
     try {
-      // Fetch staff and products normally
-      const [staffRes, productsRes] = await Promise.all([
+      const [staffRes, productsRes, txRes] = await Promise.all([
         client.from('staff').select('*'),
-        client.from('products').select('*')
+        client.from('products').select('*'),
+        client.from('transactions').select('*').order('created_at', { ascending: false })
       ]);
-      
-      // Fetch ALL transactions using the new pagination function
-      const allTransactions = await fetchAllTransactions();
-
-      if (staffRes.data) setStaffList(staffRes.data);
-      if (productsRes.data) setProductList(productsRes.data);
-      if (allTransactions) setTransactions(allTransactions);
-    } catch (err) {
-      console.error("Error fetching data from Supabase:", err);
-    } finally {
-      if (showLoader) setIsLoading(false);
-    }
-  };
 
       if (staffRes.data) setStaffList(staffRes.data);
       if (productsRes.data) setProductList(productsRes.data);
@@ -334,8 +296,7 @@ export default function App() {
     const txSubscription = client
       .channel('transactions-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
-        // Trigger the paginated fetch instead of the standard limited fetch
-        fetchAllTransactions().then((data) => data && setTransactions(data));
+        client.from('transactions').select('*').order('created_at', { ascending: false }).then(({ data }: any) => data && setTransactions(data));
       })
       .subscribe();
 
