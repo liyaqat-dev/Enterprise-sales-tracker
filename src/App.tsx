@@ -28,6 +28,16 @@ interface DisbursementItem {
   quantity: number;
 }
 
+const formatDisplayTimestamp = (ts: string, createdAt?: string) => {
+  if (createdAt) {
+    const d = new Date(createdAt);
+    if (!isNaN(d.getTime())) {
+      return `${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${d.toLocaleDateString('en-GB')}`;
+    }
+  }
+  return ts;
+};
+
 // --- CLIENT LAZY LOADER FOR LIVE PREVIEW SUPPORT ---
 const supabaseUrl = 'https://aormlfkegnheawtqrtvx.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvcm1sZmtlZ25oZWF3dHFydHZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEwMDYsImV4cCI6MjA5NTM3NzAwNn0.pf4YCh2E4g5L_K6bM1WZZ5byiAWEp_2LzUbMke9OqNM';
@@ -43,6 +53,82 @@ function getSupabaseClient() {
   }
   return supabaseClientInstance;
 }
+
+const SearchableSelect = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder
+}: {
+  options: { id: string; label: string }[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+  searchPlaceholder?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredOptions = options.filter(opt => 
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectedOption = options.find(opt => opt.id === value);
+
+  return (
+    <div className="relative w-full">
+      <div className="relative w-full">
+        <input
+          type="text"
+          placeholder={isOpen ? (searchPlaceholder || "Search...") : placeholder}
+          value={isOpen ? searchTerm : (selectedOption ? selectedOption.label : '')}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearchTerm('');
+          }}
+          onBlur={() => {
+            setTimeout(() => {
+              setIsOpen(false);
+              setSearchTerm('');
+            }, 150);
+          }}
+          className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3.5 pr-10 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none transition-all shadow-sm cursor-pointer"
+        />
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#5C4033] opacity-60 text-xs">
+          ▼
+        </div>
+      </div>
+      
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-[#D5C9B7] rounded-xl shadow-lg max-h-32 overflow-y-auto">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map(opt => (
+              <div 
+                key={opt.id}
+                className={`px-4 py-3 hover:bg-[#F0EBE1] cursor-pointer text-sm transition-colors ${value === opt.id ? 'bg-[#F0EBE1] font-medium text-[#5C4033]' : 'text-[#2C211A]'}`}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Prevents input blur before click registers
+                  onChange(opt.id);
+                  setIsOpen(false);
+                  setSearchTerm('');
+                }}
+              >
+                {opt.label}
+              </div>
+            ))
+          ) : (
+            <div className="px-4 py-3 text-sm text-gray-500 italic text-center">No matches found</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function App() {
   // --- AUTH & SYSTEM STATES ---
@@ -65,6 +151,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'log' | 'config' | 'ledger'>('home');
   // Declared variables to fix all reference crash issues
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [confirmDialog, setConfirmDialog] = useState<{isOpen: boolean; message: string; onConfirm: () => void} | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // --- DATA STATES ---
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -76,18 +164,21 @@ export default function App() {
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
 
   // New Transaction Form State - Fixed to ensure it is initialized as a string
-  const [newTxDate, setNewTxDate] = useState<string>(() => new Date().toISOString().split('T'));
+  const [newTxDate, setNewTxDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
   const [currentSelectedProduct, setCurrentSelectedProduct] = useState<string>('');
   const [currentSelectedQuantity, setCurrentSelectedQuantity] = useState<string>('');
-
+  
   // Config States
   const [newStaffName, setNewStaffName] = useState<string>('');
   const [newProductName, setNewProductName] = useState<string>('');
   const [newProductRate, setNewProductRate] = useState<string>('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editingProductName, setEditingProductName] = useState<string>('');
   const [editingRateValue, setEditingRateValue] = useState<string>('');
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [editingStaffName, setEditingStaffName] = useState<string>('');
 
   // Filtering logs
   const [filterStaff, setFilterStaff] = useState<string>('All');
@@ -328,7 +419,7 @@ export default function App() {
       if (error) throw error;
       if (data && data.length > 0) {
         // Unpack flat row object (data) instead of storing the data array directly
-        setStaffList(prev => [...prev, data]);
+        setStaffList(prev => [...prev, data[0]]);
         setNewStaffName('');
       }
     } catch (error: any) { console.error("Error:", error.message); }
@@ -356,25 +447,38 @@ export default function App() {
       if (error) throw error;
       if (data && data.length > 0) {
         // Unpack flat row object (data) instead of storing the data array directly
-        setProductList(prev => [...prev, data]);
+        setProductList(prev => [...prev, data[0]]);
         setNewProductName('');
         setNewProductRate('');
       }
     } catch (error: any) { console.error("Error:", error.message); }
   };
 
-  const handleUpdateProductRate = async (id: string, newRate: string) => {
+  const handleUpdateProduct = async (id: string, newName: string, newRate: string) => {
     const parsed = parseFloat(newRate);
-    if (isNaN(parsed) || parsed < 0) return;
+    if (isNaN(parsed) || parsed < 0 || !newName.trim()) return;
     const client = getSupabaseClient();
     if (!client) return;
     try {
-      const { data, error } = await client.from('products').update({ rate: parsed }).eq('id', id).select();
+      const { data, error } = await client.from('products').update({ name: newName.trim(), rate: parsed }).eq('id', id).select();
       if (error) throw error;
       if (data && data.length > 0) {
-        // Unpack flat row object (data) instead of storing the data array directly
-        setProductList(prev => prev.map(p => p.id === id ? data : p));
+        setProductList(prev => prev.map(p => p.id === id ? data[0] : p));
         setEditingProductId(null);
+      }
+    } catch (error: any) { console.error("Error:", error.message); }
+  };
+
+  const handleUpdateStaff = async (id: string, newName: string) => {
+    if (!newName.trim()) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      const { data, error } = await client.from('staff').update({ name: newName.trim() }).eq('id', id).select();
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setStaffList(prev => prev.map(s => s.id === id ? data[0] : s));
+        setEditingStaffId(null);
       }
     } catch (error: any) { console.error("Error:", error.message); }
   };
@@ -428,7 +532,7 @@ export default function App() {
     const now = new Date();
     txDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-    const timestampStr = `${txDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${txDateObj.toLocaleDateString()}`;
+    const timestampStr = `${txDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${txDateObj.toLocaleDateString('en-GB')}`;
     const createdAtIso = txDateObj.toISOString();
 
     const inserts = newTxItems.map(item => {
@@ -453,9 +557,9 @@ export default function App() {
         setNewTxItems([]);
         setCurrentSelectedProduct('');
         setCurrentSelectedQuantity('');
-        setNewTxDate(new Date().toISOString().split('T'));
-        // Switch view appropriately based on roles to show live records
-        setActiveTab(isAdmin ? 'ledger' : 'home');
+        setNewTxDate(new Date().toISOString().split('T')[0]);
+        // Show success popup instead of switching tabs
+        setSuccessMessage('Disbursement successfully recorded and stored in the vault.');
       }
     } catch (error: any) { console.error("Error:", error.message); }
   };
@@ -541,7 +645,7 @@ export default function App() {
         if (!staffTotals[staffName]) staffTotals[staffName] = 0;
         staffTotals[staffName] += Number(tx.total);
       });
-      const reportDate = new Date().toLocaleDateString();
+      const reportDate = new Date().toLocaleDateString('en-GB');
       Object.keys(staffTotals).forEach(staffName => {
         aoa.push([reportDate, staffName, staffTotals[staffName].toFixed(2)]);
       });
@@ -559,7 +663,7 @@ export default function App() {
           const prodName = productList.find(p => p.id === tx.product_id)?.name || 'Deleted Product';
           const formula = `${tx.rate} \u00D7 ${tx.quantity} \u20B9${tx.total}`;
           staffTotal += Number(tx.total);
-          aoa.push([tx.timestamp, index === 0 ? staffName : '', prodName, formula]);
+          aoa.push([formatDisplayTimestamp(tx.timestamp, tx.created_at), index === 0 ? staffName : '', prodName, formula]);
         });
         aoa.push(['', '', '', staffTotal.toFixed(2)]);
         aoa.push([]);
@@ -948,15 +1052,13 @@ export default function App() {
                   
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-[#5C4033] uppercase tracking-widest pl-1">2. Assign Staff</label>
-                    <select
-                      required
+                    <SearchableSelect
+                      options={staffList.map(s => ({ id: s.id, label: s.name }))}
                       value={newTxStaff}
-                      onChange={(e) => setNewTxStaff(e.target.value)}
-                      className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-2xl px-4 py-3.5 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none transition-all cursor-pointer shadow-sm"
-                    >
-                      <option value="" disabled>-- Select Authorized Staff --</option>
-                      {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                      onChange={setNewTxStaff}
+                      placeholder="-- Select Authorized Staff --"
+                      searchPlaceholder="Search Staff..."
+                    />
                   </div>
                 </div>
 
@@ -965,14 +1067,13 @@ export default function App() {
                   
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
-                      <select
+                      <SearchableSelect
+                        options={productList.map(p => ({ id: p.id, label: `${p.name} (₹${p.rate})` }))}
                         value={currentSelectedProduct}
-                        onChange={(e) => setCurrentSelectedProduct(e.target.value)}
-                        className="w-full bg-white border border-[#D5C9B7] rounded-xl px-4 py-3 text-sm text-[#2C211A] focus:ring-2 focus:ring-[#5C4033]/20 focus:border-[#5C4033] outline-none cursor-pointer"
-                      >
-                        <option value="" disabled>-- Choose Catalog SKU --</option>
-                        {productList.map(p => <option key={p.id} value={p.id}>{p.name} (₹{p.rate})</option>)}
-                      </select>
+                        onChange={setCurrentSelectedProduct}
+                        placeholder="-- Choose Catalog SKU --"
+                        searchPlaceholder="Search Product..."
+                      />
                     </div>
                     <div className="w-full sm:w-32">
                       <input
@@ -1014,7 +1115,13 @@ export default function App() {
                                 <span className="font-extrabold text-[#5C4033]">₹{(item.quantity * prod.rate).toLocaleString('en-IN')}</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveItemFromTxList(item.product_id)}
+                                  onClick={() => {
+                                    setConfirmDialog({
+                                      isOpen: true,
+                                      message: `Are you sure you want to remove ${prod?.name || 'this item'} from the list?`,
+                                      onConfirm: () => handleRemoveItemFromTxList(item.product_id)
+                                    });
+                                  }}
                                   className="text-rose-400 hover:text-white hover:bg-rose-500 p-1.5 rounded-lg transition-colors border border-transparent hover:border-rose-600"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -1092,20 +1199,53 @@ export default function App() {
                 <div className="flex-1 overflow-y-auto pr-2 space-y-2.5">
                   {staffList.map((staff) => (
                     <div key={staff.id} className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-[#EBE3D5] shadow-sm hover:border-[#D5C9B7] transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#FAF5EE] border border-[#EBE3D5] flex items-center justify-center text-xs font-bold text-[#5C4033]">
+                      <div className="flex items-center gap-3 w-full mr-2">
+                        <div className="w-8 h-8 rounded-full bg-[#FAF5EE] border border-[#EBE3D5] flex items-center justify-center text-xs font-bold text-[#5C4033] shrink-0">
                           {staff.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm font-semibold text-[#2C211A]">{staff.name}</span>
+                        {editingStaffId === staff.id ? (
+                          <input
+                            type="text"
+                            className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-lg px-2 py-1.5 text-sm font-semibold text-[#2C211A] focus:outline-none focus:ring-1 focus:ring-[#5C4033] w-full"
+                            value={editingStaffName}
+                            onChange={(e) => setEditingStaffName(e.target.value)}
+                          />
+                        ) : (
+                          <span className="text-sm font-semibold text-[#2C211A] truncate">{staff.name}</span>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveStaff(staff.id)}
-                        className="p-2 text-rose-400 hover:text-white hover:bg-rose-500 rounded-lg transition-colors border border-transparent hover:border-rose-600"
-                        title="Remove Staff"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {editingStaffId === staff.id ? (
+                          <>
+                            <button onClick={() => handleUpdateStaff(staff.id, editingStaffName)} className="p-1.5 text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                            </button>
+                            <button onClick={() => setEditingStaffId(null)} className="p-1.5 text-amber-900/60 hover:bg-[#FAF5EE] rounded-lg border border-[#EBE3D5]">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => { setEditingStaffId(staff.id); setEditingStaffName(staff.name); }} className="p-2 text-amber-900/40 hover:text-[#5C4033] hover:bg-[#FAF5EE] rounded-lg transition-colors border border-transparent hover:border-[#D5C9B7]" title="Edit Staff">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmDialog({
+                                  isOpen: true,
+                                  message: `Are you sure you want to remove ${staff.name}? This action cannot be undone.`,
+                                  onConfirm: () => handleRemoveStaff(staff.id)
+                                });
+                              }}
+                              className="p-2 text-rose-400 hover:text-white hover:bg-rose-500 rounded-lg transition-colors border border-transparent hover:border-rose-600"
+                              title="Remove Staff"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {staffList.length === 0 && (
@@ -1154,13 +1294,22 @@ export default function App() {
                 <div className="flex-1 overflow-y-auto pr-2 space-y-2.5">
                   {productList.map((product) => (
                     <div key={product.id} className="p-3.5 bg-white rounded-2xl border border-[#EBE3D5] shadow-sm hover:border-[#D5C9B7] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 w-full mr-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-[#8B6E53] shrink-0"></span>
-                        <span className="text-sm font-semibold text-[#2C211A] truncate">{product.name}</span>
+                        {editingProductId === product.id ? (
+                          <input
+                            type="text"
+                            className="bg-[#FAF9F6] border border-[#D5C9B7] rounded-lg px-2 py-1.5 text-sm font-semibold text-[#2C211A] focus:outline-none focus:ring-1 focus:ring-[#5C4033] w-full"
+                            value={editingProductName}
+                            onChange={(e) => setEditingProductName(e.target.value)}
+                          />
+                        ) : (
+                          <span className="text-sm font-semibold text-[#2C211A] truncate">{product.name}</span>
+                        )}
                       </div>
                       
                       {editingProductId === product.id ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <input
                             type="number"
                             step="0.01"
@@ -1168,7 +1317,7 @@ export default function App() {
                             value={editingRateValue}
                             onChange={(e) => setEditingRateValue(e.target.value)}
                           />
-                          <button onClick={() => handleUpdateProductRate(product.id, editingRateValue)} className="p-1.5 text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm">
+                          <button onClick={() => handleUpdateProduct(product.id, editingProductName, editingRateValue)} className="p-1.5 text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
                           </button>
                           <button onClick={() => setEditingProductId(null)} className="p-1.5 text-amber-900/60 hover:bg-[#FAF5EE] rounded-lg border border-[#EBE3D5]">
@@ -1176,14 +1325,23 @@ export default function App() {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <span className="text-sm font-black text-[#5C4033] bg-[#FAF5EE] px-3 py-1 rounded-lg border border-[#F3ECE0]">
                             ₹{product.rate.toFixed(2)}
                           </span>
-                          <button onClick={() => { setEditingProductId(product.id); setEditingRateValue(product.rate.toString()); }} className="p-2 text-amber-900/40 hover:text-[#5C4033] hover:bg-[#FAF5EE] rounded-lg transition-colors border border-transparent hover:border-[#D5C9B7]" title="Edit Rate">
+                          <button onClick={() => { setEditingProductId(product.id); setEditingProductName(product.name); setEditingRateValue(product.rate.toString()); }} className="p-2 text-amber-900/40 hover:text-[#5C4033] hover:bg-[#FAF5EE] rounded-lg transition-colors border border-transparent hover:border-[#D5C9B7]" title="Edit Product">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                           </button>
-                          <button onClick={() => handleRemoveProduct(product.id)} className="p-2 text-rose-400 hover:text-white hover:bg-rose-500 rounded-lg transition-colors border border-transparent hover:border-rose-600" title="Remove Product">
+                          <button 
+                            onClick={() => {
+                              setConfirmDialog({
+                                isOpen: true,
+                                message: `Are you sure you want to remove ${product.name}? This action cannot be undone.`,
+                                onConfirm: () => handleRemoveProduct(product.id)
+                              });
+                            }} 
+                            className="p-2 text-rose-400 hover:text-white hover:bg-rose-500 rounded-lg transition-colors border border-transparent hover:border-rose-600" title="Remove Product"
+                          >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                           </button>
                         </div>
@@ -1282,6 +1440,27 @@ export default function App() {
               </div>
             </div>
 
+            {/* FILTER CHECKSUM BAR */}
+            {filteredTransactions.length > 0 && (
+              <div className="bg-white rounded-[32px] border border-[#EBE3D5] px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-5 shadow-sm">
+                <span className="text-xs font-black text-[#5C4033] uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#5C4033]"></span>
+                  Filter Checksum
+                </span>
+                <div className="flex items-center gap-8">
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase text-amber-900/50 font-bold tracking-widest block mb-0.5">Volume Output</span>
+                    <span className="font-black text-[#2C211A] text-lg">{totalDisbursedQuantity} <span className="text-xs text-amber-900/50 ml-0.5 font-bold">Nos</span></span>
+                  </div>
+                  <div className="w-px h-8 bg-[#D5C9B7]"></div>
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase text-amber-900/50 font-bold tracking-widest block mb-0.5">Financial Output</span>
+                    <span className="text-xl font-black text-[#107C41]">₹ {totalDisbursedAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* LEDGER & LIVE CALCULATION SUMMARY TABLE */}
             <div className="bg-white rounded-[32px] border border-[#EBE3D5] overflow-hidden shadow-sm">
               <div className="px-6 py-5 border-b border-[#EBE3D5] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#FDFBF7]">
@@ -1331,7 +1510,7 @@ export default function App() {
                         const prod = productList.find(p => p.id === tx.product_id);
                         return (
                           <tr key={tx.id} className="text-sm hover:bg-[#FAF9F6]/80 transition-colors duration-150 group">
-                            <td className="py-4 px-6 text-xs text-amber-900/60 font-mono font-medium">{tx.timestamp}</td>
+                            <td className="py-4 px-6 text-xs text-amber-900/60 font-mono font-medium">{formatDisplayTimestamp(tx.timestamp, tx.created_at)}</td>
                             <td className="py-4 px-6 font-bold text-[#2C211A]">{staff ? staff.name : <span className="italic text-rose-500">Deleted Staff</span>}</td>
                             <td className="py-4 px-6">
                               <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#FAF5EE] border border-[#EBE3D5] text-[11px] font-bold text-[#5C4033] tracking-wide shadow-sm">
@@ -1347,7 +1526,16 @@ export default function App() {
                               </div>
                             </td>
                             <td className="py-4 px-6 text-right" data-exclude="true">
-                              <button onClick={() => handleDeleteTransaction(tx.id)} className="p-2 text-rose-300 hover:text-white hover:bg-rose-500 rounded-xl transition-all border border-transparent hover:border-rose-600 hover:shadow-md opacity-0 group-hover:opacity-100 focus:opacity-100" title="Delete Ledger Entry">
+                              <button 
+                                onClick={() => {
+                                  setConfirmDialog({
+                                    isOpen: true,
+                                    message: 'Are you sure you want to delete this ledger entry? This action cannot be undone.',
+                                    onConfirm: () => handleDeleteTransaction(tx.id)
+                                  });
+                                }} 
+                                className="p-2 text-rose-300 hover:text-white hover:bg-rose-500 rounded-xl transition-all border border-transparent hover:border-rose-600 hover:shadow-md opacity-0 group-hover:opacity-100 focus:opacity-100" title="Delete Ledger Entry"
+                              >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                               </button>
                             </td>
@@ -1358,26 +1546,6 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
-
-              {filteredTransactions.length > 0 && (
-                <div className="bg-[#FAF5EE] px-6 py-5 border-t border-[#EBE3D5] flex flex-col sm:flex-row items-center justify-between gap-5">
-                  <span className="text-xs font-black text-[#5C4033] uppercase tracking-widest flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#5C4033]"></span>
-                    Filter Checksum
-                  </span>
-                  <div className="flex items-center gap-8">
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase text-amber-900/50 font-bold tracking-widest block mb-0.5">Volume Output</span>
-                      <span className="font-black text-[#2C211A] text-lg">{totalDisbursedQuantity} <span className="text-xs text-amber-900/50 ml-0.5 font-bold">Nos</span></span>
-                    </div>
-                    <div className="w-px h-8 bg-[#D5C9B7]"></div>
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase text-amber-900/50 font-bold tracking-widest block mb-0.5">Financial Output</span>
-                      <span className="text-xl font-black text-[#107C41]">₹ {totalDisbursedAmount.toLocaleString('en-IN')}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1457,6 +1625,88 @@ export default function App() {
         </div>
       )}
 
+      {/* --- CONFIRMATION DIALOG --- */}
+      {confirmDialog && confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-4">
+          <div onClick={() => setConfirmDialog(null)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-md transition-opacity" />
+          <div className="relative bg-white/95 backdrop-blur-2xl rounded-[32px] w-full max-w-sm overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300 animate-in zoom-in-95">
+            <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-gradient-to-r from-red-500/10 to-transparent">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-red-100 rounded-xl text-red-600 shadow-sm">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-[#2C211A] text-base tracking-tight">Confirm Action</h3>
+                  <p className="text-xs font-semibold text-red-500">Warning</p>
+                </div>
+              </div>
+              <button onClick={() => setConfirmDialog(null)} className="p-2 rounded-full text-amber-900/40 hover:bg-white hover:text-[#5C4033] hover:shadow-sm transition-all border border-transparent hover:border-[#D5C9B7]">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 bg-[#FAF8F5]">
+              <p className="text-[14px] text-amber-900/80 font-medium leading-relaxed">{confirmDialog.message}</p>
+              
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setConfirmDialog(null)}
+                  className="flex-1 px-4 py-3 rounded-2xl bg-white border border-[#D5C9B7] text-[#5C4033] font-bold text-sm hover:border-[#5C4033] hover:shadow-sm transition-all active:scale-[0.98]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    confirmDialog.onConfirm();
+                    setConfirmDialog(null);
+                  }}
+                  className="flex-1 px-4 py-3 rounded-2xl text-white font-bold text-sm shadow-md transition-all active:scale-[0.98] hover:opacity-90"
+                  style={{ backgroundColor: '#ef4444' }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- SUCCESS MESSAGE DIALOG --- */}
+      {successMessage && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto flex items-center justify-center p-4">
+          <div onClick={() => setSuccessMessage(null)} className="fixed inset-0 bg-[#2C211A]/40 backdrop-blur-md transition-opacity" />
+          <div className="relative bg-white/95 backdrop-blur-2xl rounded-[32px] w-full max-w-sm overflow-hidden border border-[#D5C9B7] shadow-2xl transition-all duration-300 animate-in zoom-in-95">
+            <div className="px-6 py-5 border-b border-[#EBE3D5] flex justify-between items-center bg-gradient-to-r from-emerald-500/10 to-transparent">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 rounded-xl text-emerald-600 shadow-sm">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-[#2C211A] text-base tracking-tight">Success</h3>
+                  <p className="text-xs font-semibold text-emerald-600">Action Completed</p>
+                </div>
+              </div>
+              <button onClick={() => setSuccessMessage(null)} className="p-2 rounded-full text-amber-900/40 hover:bg-white hover:text-[#5C4033] hover:shadow-sm transition-all border border-transparent hover:border-[#D5C9B7]">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 bg-[#FAF8F5]">
+              <p className="text-[14px] text-amber-900/80 font-medium leading-relaxed">{successMessage}</p>
+              
+              <div className="flex pt-2">
+                <button 
+                  onClick={() => setSuccessMessage(null)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all active:scale-[0.98]"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                  Okay
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
