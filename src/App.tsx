@@ -328,7 +328,7 @@ export default function App() {
       if (error) throw error;
       if (data && data.length > 0) {
         // Unpack flat row object (data) instead of storing the data array directly
-        setStaffList(prev => [...prev, data]);
+        setStaffList(prev => [...prev, data[0]]);
         setNewStaffName('');
       }
     } catch (error: any) { console.error("Error:", error.message); }
@@ -356,7 +356,7 @@ export default function App() {
       if (error) throw error;
       if (data && data.length > 0) {
         // Unpack flat row object (data) instead of storing the data array directly
-        setProductList(prev => [...prev, data]);
+        setProductList(prev => [...prev, data[0]]);
         setNewProductName('');
         setNewProductRate('');
       }
@@ -373,7 +373,7 @@ export default function App() {
       if (error) throw error;
       if (data && data.length > 0) {
         // Unpack flat row object (data) instead of storing the data array directly
-        setProductList(prev => prev.map(p => p.id === id ? data : p));
+        setProductList(prev => prev.map(p => p.id === id ? data[0] : p));
         setEditingProductId(null);
       }
     } catch (error: any) { console.error("Error:", error.message); }
