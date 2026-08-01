@@ -1,4 +1,4 @@
-Import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 // --- TYPE DEFINITIONS ---
 interface Staff {
