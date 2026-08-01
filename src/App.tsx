@@ -167,6 +167,8 @@ export default function App() {
   const [newTxDate, setNewTxDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [newTxStaff, setNewTxStaff] = useState<string>('');
   const [newTxItems, setNewTxItems] = useState<DisbursementItem[]>([]);
+  const [loginFinancialYear, setLoginFinancialYear] = useState<string>('2026');
+  const [tableMissingError, setTableMissingError] = useState<string | null>(null);
   const [currentSelectedProduct, setCurrentSelectedProduct] = useState<string>('');
   const [currentSelectedQuantity, setCurrentSelectedQuantity] = useState<string>('');
   
@@ -290,7 +292,8 @@ export default function App() {
             email: user.email,
             user_metadata: {
               full_name: authName.trim(),
-              role: user.role
+              role: user.role,
+              financial_year: loginFinancialYear
             }
           }
         };
@@ -310,10 +313,14 @@ export default function App() {
     localStorage.removeItem('safa_session');
     setAuthName('');
     setAuthPassword('');
+    setTableMissingError(null);
+    setTransactions([]);
+    setLoginFinancialYear('2026');
   };
 
   // Extract precise role assignment from the persistent database metadata
   const isAdmin = session?.user?.user_metadata?.role === 'admin';
+  const activeFinancialYear = session?.user?.user_metadata?.financial_year || loginFinancialYear || '2026';
 
   // Protect Ledger Tab navigation from state leaks
   useEffect(() => {
@@ -344,15 +351,31 @@ export default function App() {
 
     if (showLoader) setIsLoading(true);
     try {
+      const fyTable = `transaction_${activeFinancialYear}`;
       const [staffRes, productsRes, txRes] = await Promise.all([
         client.from('staff').select('*'),
         client.from('products').select('*'),
-        client.from('transactions').select('*').order('created_at', { ascending: false })
+        client.from(fyTable).select('*').order('created_at', { ascending: false })
       ]);
 
       if (staffRes.data) setStaffList(staffRes.data);
       if (productsRes.data) setProductList(productsRes.data);
-      if (txRes.data) setTransactions(txRes.data);
+      if (txRes.data) {
+        setTransactions(txRes.data);
+        setTableMissingError(null);
+      } else if (txRes.error) {
+        // Fallback to plural transactions_${activeFinancialYear} in case user created it with plural name
+        const altRes = await client.from(`transactions_${activeFinancialYear}`).select('*').order('created_at', { ascending: false });
+        if (altRes.data) {
+          setTransactions(altRes.data);
+          setTableMissingError(null);
+        } else {
+          setTransactions([]);
+          if (txRes.error.code === '42P01' || altRes.error?.code === '42P01') {
+            setTableMissingError(activeFinancialYear);
+          }
+        }
+      }
     } catch (err) {
       console.error("Error fetching data from Supabase:", err);
     } finally {
@@ -370,6 +393,8 @@ export default function App() {
     const client = getSupabaseClient();
     if (!client) return;
 
+    const fyTable = `transaction_${activeFinancialYear}`;
+
     const staffSubscription = client
       .channel('staff-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => {
@@ -385,9 +410,11 @@ export default function App() {
       .subscribe();
 
     const txSubscription = client
-      .channel('transactions-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
-        client.from('transactions').select('*').order('created_at', { ascending: false }).then(({ data }: any) => data && setTransactions(data));
+      .channel(`${fyTable}-db-changes`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: fyTable }, () => {
+        client.from(fyTable).select('*').order('created_at', { ascending: false }).then(({ data }: any) => {
+          if (data) setTransactions(data);
+        });
       })
       .subscribe();
 
@@ -397,7 +424,7 @@ export default function App() {
       client.removeChannel(txSubscription);
       clearInterval(intervalId);
     };
-  }, [isLibLoaded, session]);
+  }, [isLibLoaded, session, activeFinancialYear]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
@@ -549,8 +576,21 @@ export default function App() {
     });
 
     try {
-      const { data, error } = await client.from('transactions').insert(inserts).select();
-      if (error) throw error;
+      const fyTable = `transaction_${activeFinancialYear}`;
+      let { data, error } = await client.from(fyTable).insert(inserts).select();
+      if (error && error.code === '42P01') {
+        const fallback = await client.from(`transactions_${activeFinancialYear}`).insert(inserts).select();
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error) {
+        if (error.code === '42P01') {
+          setTableMissingError(activeFinancialYear);
+          alert(`Table transaction_${activeFinancialYear} does not exist yet in Supabase. Please copy and run the creation SQL in your Supabase SQL Editor.`);
+          return;
+        }
+        throw error;
+      }
       if (data && data.length > 0) {
         setTransactions(prev => [...data, ...prev]);
         setNewTxStaff('');
@@ -561,14 +601,22 @@ export default function App() {
         // Show success popup instead of switching tabs
         setSuccessMessage('Disbursement successfully recorded and stored in the vault.');
       }
-    } catch (error: any) { console.error("Error:", error.message); }
+    } catch (error: any) {
+      console.error("Error:", error.message);
+      alert(error.message || "Failed to record disbursement");
+    }
   };
 
   const handleDeleteTransaction = async (txId: string) => {
     const client = getSupabaseClient();
     if (!client) return;
     try {
-      const { error } = await client.from('transactions').delete().eq('id', txId);
+      const fyTable = `transaction_${activeFinancialYear}`;
+      let { error } = await client.from(fyTable).delete().eq('id', txId);
+      if (error && error.code === '42P01') {
+        const fallback = await client.from(`transactions_${activeFinancialYear}`).delete().eq('id', txId);
+        error = fallback.error;
+      }
       if (error) throw error;
       setTransactions(prev => prev.filter(t => t.id !== txId));
     } catch (error: any) { console.error("Error:", error.message); }
@@ -579,7 +627,7 @@ export default function App() {
     return transactions.filter(t => {
       const matchStaff = filterStaff === 'All' || t.staff_id === filterStaff;
       const matchProduct = filterProduct === 'All' || t.product_id === filterProduct;
-      if (!matchStaff || !matchProduct) return false;
+      if (!matchStaff || !matchProduct ) return false;
 
       if (datePreset === 'All') return true;
 
@@ -743,6 +791,32 @@ export default function App() {
               className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3.5 text-sm text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:outline-none transition-all placeholder-amber-900/40"
             />
             
+            {authMode === 'login' && (
+              <div className="space-y-1 pt-0.5">
+                <label className="text-[10px] font-extrabold text-[#5C4033] uppercase tracking-widest pl-1 block">
+                  Financial Year
+                </label>
+                <div className="relative">
+                  <select
+                    value={loginFinancialYear}
+                    onChange={(e) => setLoginFinancialYear(e.target.value)}
+                    className="w-full bg-[#FAF9F6] border border-[#D5C9B7] rounded-xl px-4 py-3.5 pr-10 text-sm font-semibold text-[#2C211A] focus:ring-1 focus:ring-[#5C4033] focus:border-[#5C4033] focus:outline-none transition-all cursor-pointer shadow-sm appearance-none"
+                  >
+                    <option value="2026">FY 2026</option>
+                    <option value="2027">FY 2027</option>
+                    <option value="2028">FY 2028</option>
+                    <option value="2029">FY 2029</option>
+                    <option value="2030">FY 2030</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-[#5C4033]">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {authError && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-medium text-center">
                 {authError}
@@ -857,13 +931,16 @@ export default function App() {
             )}
 
             {/* Profile / Logout */}
-            <div className="flex items-center gap-3 pl-3 md:pl-5 border-l border-[#EBE3D5]">
+            <div className="flex items-center gap-2 md:gap-3 pl-3 md:pl-5 border-l border-[#EBE3D5]">
+              <span className="px-2.5 py-1 rounded-full bg-[#5C4033]/10 border border-[#5C4033]/20 text-[10px] font-extrabold text-[#5C4033] tracking-widest uppercase shadow-sm">
+                FY {activeFinancialYear}
+              </span>
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-[10px] font-bold text-[#5C4033] uppercase">
                   {isAdmin ? 'Admin Supervisor' : 'Staff Operator'}
                 </span>
                 <span className="text-xs font-medium text-amber-900/60 truncate max-w-[120px]">
-                  {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')}
+                  {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0]}
                 </span>
               </div>
               <button
@@ -1038,7 +1115,7 @@ export default function App() {
               </div>
 
               <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-[#5C4033] uppercase tracking-widest pl-1">1. Disperse Date</label>
                     <input
@@ -1063,7 +1140,7 @@ export default function App() {
                 </div>
 
                 <div className="p-5 md:p-6 bg-[#FAF8F5] border border-[#EBE3D5] rounded-3xl space-y-4 shadow-inner">
-                  <h4 className="text-[11px] font-bold text-[#5C4033] uppercase tracking-widest pl-1">3. Build Item List</h4>
+                  <h4 className="text-[11px] font-bold text-[#5C4033] uppercase tracking-widest pl-1">4. Build Item List</h4>
                   
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
