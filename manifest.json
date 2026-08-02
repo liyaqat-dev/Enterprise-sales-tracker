@@ -1,6 +1,6 @@
 {
   "name": "Safa PayRoll",
-  "short_name": "SalesTracker",
+  "short_name": "Safa PayRoll",
   "description": "Official Safa PayRoll App",
   "start_url": "/",
   "display": "standalone",
