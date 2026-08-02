@@ -970,7 +970,7 @@ export default function App() {
           <div className="flex items-center space-x-2">
             <img src="https://github.com/liyaqat-dev/Enterprise-sales-tracker/blob/main/20260526_182400.png?raw=true" alt="Logo" className="w-8 h-8 object-contain" />
             <div>
-              <span className="block text-sm font-extrabold text-[#2C211A] leading-tight">SAFA Vault</span>
+              <span className="block text-sm font-extrabold text-[#2C211A] leading-tight">SAFA PAYROLL</span>
               <span className="block text-[9px] uppercase tracking-wider text-[#5C4033] font-semibold">
                 {isAdmin ? 'HQ Dashboard' : 'Operator Mode'}
               </span>
